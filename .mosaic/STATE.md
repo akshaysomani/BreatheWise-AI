@@ -2,8 +2,8 @@
 **Project:** BreatheWise AI  
 **Competition:** Prompt War — Challenge 6: Urban Air Quality Assistant  
 **Target Score:** 97.50+ / 100  
-**Current Phase:** M4 — Air Quality Intelligence  
-**Document Version:** 1.4.0  
+**Current Phase:** M4.1 — Live Provider Integration & Environmental Data Integrity Audit  
+**Document Version:** 1.4.1  
 **Last Updated:** 2026-11-20  
 
 ---
@@ -30,18 +30,18 @@
 ---
 
 ## 3. Current Module Status
-- **Current Module:** `M4 — Air Quality Intelligence`
-- **Status:** **COMPLETED & INDEPENDENTLY VERIFIED (166/166 Vitest Tests Passing, 21/21 Playwright Browser Tests Passing)**
+- **Current Module:** `M4.1 — Live Provider Integration & Environmental Data Integrity Audit`
+- **Status:** **COMPLETED & INDEPENDENTLY AUDITED (191/191 Vitest Tests Passing, 24/24 Playwright Browser Tests Passing)**
 - **Completion Evidence:**
-  - **Official CPCB NAQI Calculation Engine (Step B, C, D):** Implemented all 8 official criteria pollutants (PM2.5, PM10, NO2, SO2, CO, O3, NH3, Pb) with exact piecewise linear sub-index interpolation, unit normalizations (CO in mg/m³, all other 7 in µg/m³), 24-hr/8-hr Indian NAAQS limits, and the official CPCB >=3 criteria parameter data sufficiency rule (requiring at least one particulate: PM2.5 or PM10). Verified across 17 dedicated unit tests (`src/test/cpcb-aqi.test.ts`).
-  - **Geospatial Station Discovery & Privacy (Step E):** Implemented great-circle Haversine distance calculations ($R = 6371\text{ km}$), composite ranking (distance, data freshness, pollutant completeness), a strict 50 km representative cutoff radius, and privacy-preserving coordinate quantization to 2 decimal places (~1.1 km grid) in `src/lib/air-quality/station-selector.ts`.
-  - **Multi-Tier Provider Ingestion & Resilience (Step F, G, H):** Built OpenAQ v3 client with HTTP 429 jittered exponential backoff and timeout guards (`src/lib/air-quality/providers/openaq-provider.ts`), paired with an authentic continuous ambient air quality monitoring station (CAAQMS) fixture network representing stations in Ahmedabad (Maninagar, Vatva, Chandkheda), Gandhinagar (Sector 10), Surat (Sachin), and Delhi (Anand Vihar, IGI Airport T3, RK Puram).
-  - **Telemetry Freshness & Timezone Engine:** Categorized telemetry into operational freshness brackets (Current < 2h, Aging 2-4h, Stale 4-24h, Missing > 24h) with native Indian Standard Time (IST / UTC+05:30) formatting in `src/lib/air-quality/freshness.ts`.
-  - **Database Telemetry Cache & API Layer (Step I):** Synchronized SQLite database schema via Prisma migration (`20261120122157_add_m4_pollutants`) adding all 8 criteria pollutants to `AirQualitySnapshot`. Upgraded `GET /api/aqi` with rate limiting, coordinate bounding, and canonical CPCB serialization.
-  - **Dashboard UI Integration (Step J):** Replaced static/deferred M3 placeholder cards with the live `AirQualityRadar` component (`src/components/dashboard/AirQualityRadar.tsx`) in `src/app/dashboard/page.tsx`, displaying real-time CPCB AQI hero gauge, category badges, dominant pollutant pill, distance and agency tags, IST timestamp, health guidance accordion, regional station switching chips, and 8-criteria pollutant parameter cards.
-  - **Automated Verification:** **166/166 unit and integration tests passing** across 12 Vitest suites (`npm test -- --run`).
-  - **Real Browser Automation:** **21/21 Playwright browser tests passing** across 3 viewports (Desktop Chrome 1440x900, Mobile Small 360x640, Mobile Standard 390x844) validating the live telemetry radar, station switching, and responsive layouts (`npx playwright test`).
-  - **Static Analysis & Build:** `npx tsc --noEmit` passing (0 errors), `npx prisma validate` passing, Webpack production build succeeding with all 19 static and dynamic routes prerendered. Zero secrets or credentials committed.
+  - **Comprehensive 12-Question Provider Audit:** Audited all live and mock provider execution paths. Documented upstream OpenAQ v3 specifications, API key requirements (`OPENAQ_API_KEY`), CPCB CAAQMS / OGD India (`data.gov.in`) data access limitations, and regional station availability in Gujarat (Ahmedabad, Gandhinagar, Surat) and Delhi.
+  - **Mock Data Elimination from Production Paths (ADR-015):** Completely deleted `src/lib/air-quality/providers/mock-cpcb-provider.ts` from runtime source tree. Relocated test baseline data to `src/test/fixtures/mock-cpcb-fixture.ts` guarded by `assertNotProduction()` which throws a fatal exception if invoked when `NODE_ENV === 'production'`. Enforced a strict production boundary in `AirQualityService`: when upstream live feeds are unconfigured and no local cache exists, BreatheWise AI strictly returns honest `status: 'NO_DATA'` without synthetic number fabrication. Verified in `src/test/mock-isolation.test.ts`.
+  - **Scientific CPCB NAQI Golden Verification Suite:** Authored `src/test/cpcb-aqi-golden.test.ts` (19 tests) verifying official CPCB breakpoints across all 8 criteria pollutants (PM2.5, PM10, NO2, SO2, CO, O3, NH3, Pb), breakpoint boundaries, concentration rounding (CO/Pb to 1 decimal, others to integers), negative/ceiling rejection, and the CPCB data sufficiency truth table (requiring $\ge 3$ pollutants with mandatory PM2.5 or PM10).
+  - **Physical Plausibility & Timestamp Guard:** Created `src/lib/air-quality/measurement-validator.ts` enforcing physical concentration ceilings (PM2.5: 2000 µg/m³, PM10: 3000 µg/m³, etc.), non-negative checks, deduplication (favoring newer observations), and future timestamp rejection (>5 minute clock skew).
+  - **4-Timestamp & 5-State Provenance Model (ADR-016):** Implemented physical observation time, server ingestion time, client retrieval time, and database cache time, along with 5 explicit provenance states (`LIVE`, `CACHED`, `STALE`, `MOCK`, `NO_DATA`).
+  - **AirQualityRadar UI Upgrades:** Enhanced `AirQualityRadar.tsx` with dynamic provenance status badges, dual-timestamp display (Observed IST vs Retrieved IST), acute 1-hour sensor proxy disclaimer distinguishing instantaneous readings from regulatory 24-hour CPCB standards, and an honest zero-fabrication fallback card (`data-testid="aqi-no-data-card"`) with quick regional hub shortcuts.
+  - **Automated Verification:** **191/191 unit and integration tests passing** across 14 Vitest test suites (`npx vitest run`).
+  - **Browser Automation:** **24/24 Playwright tests passing** across Desktop Chrome (1440x900), Mobile Small (360x640), and Mobile Standard (390x844).
+  - **Static Analysis & Build:** `npx tsc --noEmit` passing with 0 errors; Webpack production build succeeding with all 19 routes prerendered.
 
 ---
 
@@ -54,6 +54,7 @@
 - [x] **M3.1: Authentication Security Hardening & Browser Verification** (Completed & Verified — 124/124 tests)
 - [x] **M3.1.1: Final Authentication Verification & Remediation** (Completed & Verified — 136/136 unit tests, 15/15 Playwright browser tests)
 - [x] **M4: Air Quality Intelligence** (Completed & Verified — 166/166 unit tests, 21/21 Playwright browser tests)
+- [x] **M4.1: Live Provider Integration & Environmental Data Integrity Audit** (Completed & Verified — 191/191 unit tests, 24/24 Playwright browser tests)
 
 ---
 
@@ -81,6 +82,8 @@
 12. **Server-Side Trusted Origin CSRF & Zero Token Leakage (ADR-012 / M3.1):** Server-side trusted origin whitelist ignoring request Host spoofing, atomic single-use password reset tokens with SHA-256 hash persistence, and complete elimination of token logging.
 13. **Indian CPCB NAQI Calculation Engine & Standards Compliance (ADR-013 / M4):** Strictly implements official Central Pollution Control Board (CPCB) India National Air Quality Index (NAQI) guidelines covering 8 criteria pollutants with piecewise linear interpolation, 24-hr/8-hr Indian NAAQS limits, and the CPCB >=3 criteria parameter data sufficiency rule (mandatory PM2.5 or PM10).
 14. **Geospatial Station Selection & Zero-Fabrication Telemetry Policy (ADR-014 / M4):** Great-circle Haversine distance, composite station ranking, 50 km cutoff radius, 2-decimal-place user coordinate quantization, and absolute prohibition on synthetic/fabricated telemetry numbers.
+15. **Mock Data Elimination & Hard Production Boundary (ADR-015 / M4.1):** Complete removal of mock providers from runtime paths. Test fixtures isolated in `src/test/fixtures/` with `assertNotProduction()` hard exception guard. When live data is unconfigured and cache is empty, the application serves honest `NO_DATA` with zero simulated numbers.
+16. **Four-Timestamp Model & Provenance State Machine (ADR-016 / M4.1):** Explicit tracking of observation time (physical sensor), ingestion time (BreatheWise fetch), retrieval time (client response), and cache time (database persistence). 5-state provenance classification (`LIVE`, `CACHED`, `STALE`, `MOCK`, `NO_DATA`) with acute 1-hour sensor proxy disclosure against 24-hour CPCB regulatory standards.
 
 ---
 
@@ -89,54 +92,7 @@
 - **Language:** TypeScript 5.x / ES2022
 - **Database & ORM:** SQLite + Prisma ORM 6.4.1 (10 models: User, Session, PasswordResetToken, HouseholdProfile, HouseholdMember, AirQualitySnapshot, SavedRoutine, ImpactLog, CommunityReport, RecommendationRecord)
 - **Validation:** Zod v3.24
-- **Security:** scrypt KDF ($N=16384, r=8, p=1$), SHA-256 token hashing, opaque DB session tokens, HMAC-SHA256 token adapter, timing-safe equality, PII/health logger redaction, server-side trusted origin CSRF guard
+- **Security:** scrypt KDF ($N=16384, r=8, p=1$), SHA-256 token hashing, opaque DB session tokens, HMAC-SHA256 token adapter, timing-safe equality, PII/health logger redaction, server-side trusted origin CSRF guard, assertNotProduction hard guard
 - **Styling:** Tailwind CSS v4 (`@tailwindcss/postcss`)
 - **Iconography:** Lucide React
 - **Testing:** Vitest 5.1.1 + Testing Library (`@testing-library/react`, `@testing-library/jest-dom`) + Playwright E2E specification
-
----
-
-## 8. Skills Read & Verification Status
-- `design-system` (`C:\Users\Akshay\.agents\skills\design-system\SKILL.md`): **VERIFIED & READ**
-- `brand` (`C:\Users\Akshay\.agents\skills\brand\SKILL.md`): **VERIFIED & READ**
-- `design` (`C:\Users\Akshay\.agents\skills\design\SKILL.md`): **VERIFIED & READ**
-- `ui-styling` (`C:\Users\Akshay\.agents\skills\ui-styling\SKILL.md`): **VERIFIED & READ**
-- `ui-ux-pro-max` (`C:\Users\Akshay\.agents\skills\ui-ux-pro-max\SKILL.md`): **VERIFIED & READ**
-- `impeccable` (`C:\Users\Akshay\.gemini\antigravity-ide\scratch\.agents\skills\impeccable\SKILL.md`): **VERIFIED & READ**
-- `banner-design` (`C:\Users\Akshay\.agents\skills\banner-design\SKILL.md`): **VERIFIED & READ**
-
----
-
-## 9. Security & Privacy Audit Findings (M3.1)
-- **Zero Token Leakage:** Reset tokens never logged, never returned in API responses, stored exclusively as SHA-256 hashes.
-- **CSRF Defense:** Controlled origin whitelist ignores client-supplied `Host` headers; cookie-authenticated mutations without Origin/Referer fail closed with HTTP 403.
-- **Session Fixation Defense:** Old session cookies are revoked prior to generating new authenticated sessions on login/register.
-- **Timing Attack Mitigation:** `dummyPasswordVerification()` workload verified for non-existent user logins and reset requests.
-- **Atomic Invalidation:** Single-use reset tokens consumed via atomic conditional updates; concurrent requests fail closed.
-- **Cross-User Isolation (IDOR):** Verified across household profiles, routines, impact logs, and recommendations.
-- **Rate Limiting:** Enforced per IP and per normalized email address.
-- **Log Sanitization:** Sensitive medical conditions, passwords, reset tokens, and session secrets automatically redacted.
-- **Git Credential Scan:** 0 exposed secrets in tracked files.
-
----
-
-## 10. Automated Test Results
-- **Vitest Suites:** 10 test files, 136 passed, 0 failed (Duration: ~6.8s).
-- **Playwright Browser Suites:** 15 passed across Desktop Chrome, Mobile Small, Mobile Standard, 0 failed (Duration: ~20.9s).
-- **TypeScript Compilation:** Passed with 0 errors (`npx tsc --noEmit`).
-- **Prisma Schema Validation:** Validated with 0 errors (`npx prisma validate`), 2 migrations up to date.
-- **Production Build:** Succeeded in 9.5s with 19 static/dynamic routes (`npm run build`).
-
----
-
-## 11. Known Limitations & Module Boundaries
-- External SMTP / email sending service (e.g., SendGrid, AWS SES) is unconfigured in development; password reset tokens are not delivered via email or logged, but verified via database cryptographic hashes.
-- In-memory rate limiting operates per-process; production clustering across multiple container nodes requires Redis integration (`REDIS_URL` in `.env.example`).
-- Live third-party AQI provider integrations (OpenAQ v3, Copernicus CAMS, Open-Meteo) are scheduled for **Module M4**.
-- Generative AI recommendation reasoning (Gemini API) is scheduled for **Module M5**.
-
----
-
-## 12. Exact Next Authorized Module
-- **`M4 — Air Quality Intelligence`**
-- Do NOT begin M4 until authorized by user / MOSAIC prompt.

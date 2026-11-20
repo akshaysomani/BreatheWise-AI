@@ -12,6 +12,9 @@ import {
   Compass,
   CheckCircle2,
   AlertCircle,
+  Database,
+  Radio,
+  FileCheck2,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -110,9 +113,65 @@ export function AirQualityRadar({
   const dominant = data?.cpcbAqi?.dominantPollutant ?? data?.dominantPollutant ?? 'N/A';
   const stationName = data?.station?.name || data?.stationName || 'Regional Telemetry Station';
   const distanceKm = data?.station?.distanceKm;
-  const localTime = data?.freshness?.measurementLocalTime || 'Recent';
-  const freshnessState = data?.freshness?.state || 'CURRENT';
   const health = data?.cpcbAqi?.healthGuidance;
+
+  // Provenance & Timestamps
+  const provenanceStatus: 'LIVE' | 'CACHED' | 'STALE' | 'MOCK' | 'NO_DATA' =
+    data?.provenanceStatus ||
+    (data?.isLiveExternalFeed ? 'LIVE' : data?.freshness?.isStale ? 'STALE' : 'CACHED');
+
+  const observationTime = data?.timestamps?.observationLocalTime || data?.freshness?.measurementLocalTime || 'Recent';
+  const retrievalTime = data?.timestamps?.retrievalLocalTime || 'Recent Query';
+  const averagingNotice = data?.cpcbAqi?.averagingNotice || data?.timestamps?.averagingNotice || 'Acute 1-hour sensor proxy evaluated against CPCB breakpoints. Regulatory CPCB standard mandates a 24-hour average.';
+  const isInstantaneous = data?.cpcbAqi?.isInstantaneousProxy ?? data?.timestamps?.isInstantaneousProxy ?? true;
+
+  // Render Provenance Badge configuration
+  const renderProvenanceBadge = () => {
+    switch (provenanceStatus) {
+      case 'LIVE':
+        return (
+          <Badge variant="success" size="sm" className="font-semibold" data-testid="provenance-badge-live">
+            <Radio className="w-3 h-3 mr-1 text-[#397A55] animate-pulse" />
+            Live Observation (&lt;2h)
+          </Badge>
+        );
+      case 'CACHED':
+        return (
+          <Badge variant="secondary" size="sm" className="font-semibold" data-testid="provenance-badge-cached">
+            <Database className="w-3 h-3 mr-1 text-[#48534C]" />
+            Verified Cached Observation
+          </Badge>
+        );
+      case 'STALE':
+        return (
+          <Badge variant="warning" size="sm" className="font-semibold" data-testid="provenance-badge-stale">
+            <Clock className="w-3 h-3 mr-1 text-[#D97706]" />
+            Stale Telemetry (&gt;4h)
+          </Badge>
+        );
+      case 'MOCK':
+        return (
+          <Badge variant="accent" size="sm" className="font-semibold" data-testid="provenance-badge-mock">
+            <FileCheck2 className="w-3 h-3 mr-1 text-[#397A55]" />
+            Demo Test Fixture (Non-Production)
+          </Badge>
+        );
+      case 'NO_DATA':
+      default:
+        return (
+          <Badge variant="secondary" size="sm" className="font-semibold" data-testid="provenance-badge-nodata">
+            <AlertCircle className="w-3 h-3 mr-1 text-[#68766C]" />
+            No Verified Data
+          </Badge>
+        );
+    }
+  };
+
+  const isNoData = !loading && !error && (
+    data?.status === 'NO_DATA' ||
+    data?.status === 'NO_NEARBY_STATION' ||
+    provenanceStatus === 'NO_DATA'
+  );
 
   return (
     <Card className="bg-white border-[#E2E8DE] shadow-sm overflow-hidden" data-testid="aqi-radar-card">
@@ -133,13 +192,7 @@ export function AirQualityRadar({
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-auto">
-            <Badge
-              variant={freshnessState === 'CURRENT' ? 'success' : freshnessState === 'AGING' ? 'warning' : 'secondary'}
-              size="sm"
-            >
-              <Clock className="w-3 h-3 mr-1" />
-              {freshnessState === 'CURRENT' ? 'Live Telemetry (<2h)' : freshnessState === 'AGING' ? 'Aging Telemetry' : 'Cached Telemetry'}
-            </Badge>
+            {renderProvenanceBadge()}
 
             <Button
               variant="outline"
@@ -228,15 +281,22 @@ export function AirQualityRadar({
           </div>
         )}
 
-        {/* Honest No-Nearby-Station Fallback State */}
-        {!loading && !error && data?.status === 'NO_NEARBY_STATION' && (
-          <div className="p-6 text-center bg-[#FAFBF9] rounded-xl space-y-3 border border-[#E2E8DE]">
+        {/* Honest No-Data / No-Nearby-Station Fallback State */}
+        {isNoData && (
+          <div className="p-6 text-center bg-[#FAFBF9] rounded-xl space-y-3 border border-[#E2E8DE]" data-testid="aqi-no-data-card">
             <MapPin className="w-8 h-8 text-[#D97706] mx-auto" />
-            <h4 className="text-base font-bold text-[#27352D]">No Monitoring Station Within 50 km</h4>
+            <h4 className="text-base font-bold text-[#27352D]">
+              {data?.status === 'NO_NEARBY_STATION'
+                ? 'No Monitoring Station Within 50 km'
+                : 'No Verified Atmospheric Telemetry Available'}
+            </h4>
             <p className="text-xs text-[#68766C] max-w-lg mx-auto">
-              BreatheWise AI operates under a strict scientific zero-fabrication standard. No active continuous
-              ambient monitoring station was located within a 50 km radius of your selected coordinates.
+              {data?.notice ||
+                'BreatheWise AI operates under a strict scientific zero-fabrication standard. No active continuous ambient monitoring station with verified telemetry is currently reachable for these coordinates.'}
             </p>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EEF3EA] text-[#397A55] text-xs font-semibold rounded-full">
+              <ShieldCheck className="w-3.5 h-3.5" /> Zero Synthetic Fabrication Policy Enforced
+            </div>
             <div className="pt-2 flex justify-center gap-2">
               <Button
                 variant="outline"
@@ -257,19 +317,24 @@ export function AirQualityRadar({
         )}
 
         {/* Live / Verified Telemetry Display */}
-        {!loading && !error && data && data.status !== 'NO_NEARBY_STATION' && (
+        {!loading && !error && !isNoData && data && (
           <div className="space-y-6">
             {/* Main AQI Hero Gauge Card */}
             <div className={`p-5 rounded-xl border ${categoryStyle.bg} ${categoryStyle.border} transition-all`}>
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-semibold text-[#68766C] uppercase tracking-wider">
                       CPCB National AQI
                     </span>
                     <Badge variant={categoryStyle.badgeVariant} size="sm">
                       {categoryKey.replace(/_/g, ' ')}
                     </Badge>
+                    {isInstantaneous && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 bg-amber-100/80 rounded border border-amber-300 text-amber-800">
+                        Acute 1-Hour Proxy
+                      </span>
+                    )}
                     {dominant !== 'N/A' && (
                       <span className="text-xs font-medium px-2 py-0.5 bg-white/80 rounded border border-[#E2E8DE] text-[#27352D]">
                         Dominant: <strong>{dominant}</strong>
@@ -292,7 +357,7 @@ export function AirQualityRadar({
                 </div>
 
                 {/* Station Location & Metadata Badge */}
-                <div className="bg-white/90 p-4 rounded-lg border border-[#E2E8DE] shadow-xs space-y-1.5 md:min-w-[280px]">
+                <div className="bg-white/90 p-4 rounded-lg border border-[#E2E8DE] shadow-xs space-y-1.5 md:min-w-[300px]">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-[#27352D]">
                     <MapPin className="w-3.5 h-3.5 text-[#397A55]" />
                     <span className="truncate">{stationName}</span>
@@ -303,13 +368,25 @@ export function AirQualityRadar({
                     </div>
                   )}
                   <div className="text-[11px] text-[#68766C] flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-[#68766C]" />
-                    Updated: {localTime}
+                    <Clock className="w-3 h-3 text-[#397A55]" />
+                    <strong>Observed:</strong> {observationTime}
+                  </div>
+                  <div className="text-[11px] text-[#68766C] flex items-center gap-1">
+                    <Database className="w-3 h-3 text-[#68766C]" />
+                    <strong>Retrieved:</strong> {retrievalTime}
                   </div>
                   <div className="text-[10px] text-[#397A55] font-medium pt-0.5">
                     Agency: {data?.station?.operatingAgency || 'CPCB / State Pollution Control Board'}
                   </div>
                 </div>
+              </div>
+
+              {/* Acute Sensor Proxy vs Regulatory Standard Notice */}
+              <div className="mt-3 p-2.5 bg-white/70 rounded-lg border border-[#E2E8DE] flex items-start gap-2 text-[11px] text-[#68766C]">
+                <Info className="w-4 h-4 text-[#397A55] shrink-0 mt-0.5" />
+                <span className="leading-snug">
+                  <strong>Averaging Standard:</strong> {averagingNotice}
+                </span>
               </div>
 
               {/* Health Guidance Expandable Strip */}
@@ -423,7 +500,7 @@ export function AirQualityRadar({
             <div className="p-3.5 bg-[#F7F8F3] rounded-lg border border-[#E2E8DE] text-[11px] text-[#68766C] space-y-1">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                 <span>
-                  <strong>Data Provenance:</strong> {data?.attribution?.provider || 'CPCB CAAQMS / OpenAQ v3'}
+                  <strong>Data Provenance:</strong> {data?.attribution?.provider || data?.source || 'CPCB CAAQMS / OpenAQ v3'}
                 </span>
                 <span>
                   <strong>License:</strong> {data?.attribution?.license || 'Open Database License (ODbL) / GODL India'}

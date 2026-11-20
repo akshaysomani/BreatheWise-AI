@@ -10,7 +10,7 @@ import {
   evaluateFreshness,
   formatToIndianStandardTime,
 } from '@/lib/air-quality/freshness';
-import { mockCpcbProvider, VERIFIED_CPCB_STATIONS } from '@/lib/air-quality/providers/mock-cpcb-provider';
+import { VERIFIED_CPCB_STATIONS } from './fixtures/mock-cpcb-fixture';
 import { airQualityService } from '@/services/air-quality.service';
 import prisma from '@/lib/db';
 
@@ -102,12 +102,16 @@ describe('Air Quality Intelligence Modules (M4)', () => {
   describe('End-to-End Air Quality Service Orchestration', () => {
     beforeEach(async () => {
       // Clean up test airQualitySnapshots to ensure isolated assertions
-      await prisma.airQualitySnapshot.deleteMany({});
+      await prisma.airQualitySnapshot.deleteMany({
+        where: {
+          stationId: { startsWith: 'test_' },
+        },
+      });
     });
 
     it('returns CPCB AQI for Delhi coordinates via authentic CPCB station network', async () => {
-      // Near Anand Vihar (28.6476, 77.3158)
-      const result = await airQualityService.getAirQuality(28.6476, 77.3158, 'Delhi');
+      // Near Anand Vihar (28.6476, 77.3158) with explicit fixture authorization in test mode
+      const result = await airQualityService.getAirQuality(28.6476, 77.3158, 'Delhi', { allowFixture: true });
 
       expect(result.status).toBe('SUCCESS');
       expect(result.data).toBeDefined();
@@ -121,7 +125,7 @@ describe('Air Quality Intelligence Modules (M4)', () => {
 
     it('honestly reports NO_NEARBY_STATION for remote coordinates without fabricating data', async () => {
       // Remote Arabian Sea / Off-coast coordinates (19.00, 68.00)
-      const result = await airQualityService.getAirQuality(19.00, 68.00);
+      const result = await airQualityService.getAirQuality(19.00, 68.00, undefined, { allowFixture: true });
 
       expect(result.status).toBe('NO_NEARBY_STATION');
       expect(result.data).toBeUndefined();

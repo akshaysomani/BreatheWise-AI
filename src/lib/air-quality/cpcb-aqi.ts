@@ -426,6 +426,7 @@ export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
     const naaqs = CPCB_NAAQS_LIMITS[input.pollutant];
     const isExceededNAAQS = naaqs ? normalizedValue > naaqs.limit : false;
 
+    const is1Hour = (input.averagingPeriod || '24_HOUR') === '1_HOUR';
     measurements[input.pollutant] = {
       pollutant: input.pollutant,
       value: input.value,
@@ -433,9 +434,11 @@ export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
       normalizedUnit,
       normalizedValue,
       averagingPeriod: input.averagingPeriod || '24_HOUR',
+      isInstantaneousProxy: is1Hour,
       subIndex,
       cpcbCategory: category,
-      measurementTimestampUtc: input.measurementTimestampUtc || new Date().toISOString(),
+      observationTimestampUtc: input.measurementTimestampUtc || new Date().toISOString(),
+      ingestionTimestampUtc: new Date().toISOString(),
       isExceededNAAQS,
       rawParameterName: input.rawParameterName,
     };
@@ -447,6 +450,9 @@ export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
   }
 
   const sufficiency = checkCpcbDataSufficiency(validPollutants);
+
+  const averagingNotice =
+    'Acute 1-hour sensor concentrations are evaluated against 24-hour/8-hour CPCB NAQI breakpoints as an instantaneous real-time proxy. Regulatory 24-hour CPCB AQI requires minimum 16 hours of continuous data completeness per MoEFCC protocol.';
 
   if (!sufficiency.isSufficient) {
     // Insufficient data per CPCB: overall AQI cannot be formulated
@@ -461,6 +467,7 @@ export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
         subIndices,
         dataSufficiency: sufficiency,
         methodology: 'CPCB_NAQI_INDIA_2014',
+        averagingNotice,
       },
     };
   }
@@ -494,6 +501,7 @@ export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
       subIndices,
       dataSufficiency: sufficiency,
       methodology: 'CPCB_NAQI_INDIA_2014',
+      averagingNotice,
     },
   };
 }

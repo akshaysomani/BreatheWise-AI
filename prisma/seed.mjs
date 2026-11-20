@@ -137,7 +137,72 @@ async function main() {
     },
   });
 
-  console.log('Development seeding completed successfully.');
+  // 7. Seed Verified Regional Air Quality Snapshots (Delhi Anand Vihar & Ahmedabad Maninagar)
+  const now = new Date();
+  await prisma.airQualitySnapshot.deleteMany({
+    where: {
+      stationId: { in: ['cpcb_station_delhi_anand_vihar', 'cpcb_station_ahd_maninagar'] },
+    },
+  });
+
+  await prisma.airQualitySnapshot.createMany({
+    data: [
+      {
+        latitude: 28.6476,
+        longitude: 77.3158,
+        stationId: 'cpcb_station_delhi_anand_vihar',
+        stationName: 'Anand Vihar, Delhi - DPCC',
+        sourceProvider: 'CPCB_CAAQMS',
+        aqiValue: 342,
+        aqiCategory: 'VERY_POOR',
+        dominantPollutant: 'PM2.5',
+        pm25: 184.2,
+        pm10: 278.0,
+        no2: 68.4,
+        o3: 34.2,
+        so2: 18.5,
+        co: 1.85,
+        nh3: 42.0,
+        pb: 0.42,
+        distanceKm: 0.1,
+        rawBreakdownJson: JSON.stringify({
+          subIndices: { 'PM2.5': 342, 'PM10': 228, 'NO2': 86, 'CO': 93, 'O3': 34, 'SO2': 23, 'NH3': 11, 'Pb': 42 },
+          isInstantaneousProxy: true,
+          averagingNotice: 'Acute 1-hour sensor proxy evaluated against CPCB breakpoints. Regulatory CPCB standard mandates a 24-hour average.',
+        }),
+        measurementTimestamp: now,
+        isStale: false,
+      },
+      {
+        latitude: 22.9961,
+        longitude: 72.6042,
+        stationId: 'cpcb_station_ahd_maninagar',
+        stationName: 'Maninagar, Ahmedabad - GPCB',
+        sourceProvider: 'CPCB_CAAQMS',
+        aqiValue: 168,
+        aqiCategory: 'MODERATELY_POLLUTED',
+        dominantPollutant: 'PM2.5',
+        pm25: 80.5,
+        pm10: 142.0,
+        no2: 44.2,
+        o3: 28.0,
+        so2: 12.4,
+        co: 1.20,
+        nh3: 22.0,
+        pb: 0.28,
+        distanceKm: 0.1,
+        rawBreakdownJson: JSON.stringify({
+          subIndices: { 'PM2.5': 168, 'PM10': 128, 'NO2': 55, 'CO': 60, 'O3': 28, 'SO2': 16, 'NH3': 6, 'Pb': 28 },
+          isInstantaneousProxy: true,
+          averagingNotice: 'Acute 1-hour sensor proxy evaluated against CPCB breakpoints. Regulatory CPCB standard mandates a 24-hour average.',
+        }),
+        measurementTimestamp: now,
+        isStale: false,
+      },
+    ],
+  });
+
+  console.log('Development and regional air quality seeding completed successfully.');
 }
 
 main()

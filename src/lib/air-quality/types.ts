@@ -1,6 +1,6 @@
 /**
  * BreatheWise AI — Air Quality Intelligence Data Architecture
- * Module M4: Canonical Types & Provider Interfaces
+ * Module M4.1: Canonical Types, Provenance Model & Provider Interfaces
  * 
  * Complies with official Central Pollution Control Board (CPCB) India
  * National Air Quality Index (NAQI) technical standards (2014/2015).
@@ -19,6 +19,13 @@ export type FreshnessState =
   | 'PROVIDER_UNAVAILABLE'// Upstream provider timeout/error
   | 'INSUFFICIENT_DATA';  // Does not satisfy CPCB >=3 criteria rule
 
+export type TelemetryProvenanceStatus =
+  | 'LIVE'      // Valid fresh provider observation meeting freshness policy (< 2 hours)
+  | 'CACHED'    // Previously retrieved observation served from cache within valid TTL
+  | 'STALE'     // Observation exceeds freshness threshold (>= 4 hours)
+  | 'MOCK'      // Test or fixture measurement (HARD BLOCKED in production)
+  | 'NO_DATA';  // No suitable validated observation is available
+
 export type CpcbCategory =
   | 'GOOD'                // 0 - 50
   | 'SATISFACTORY'         // 51 - 100
@@ -34,10 +41,12 @@ export interface CanonicalPollutantMeasurement {
   normalizedUnit: 'µg/m³' | 'mg/m³'; // CO is normalized to mg/m³, all other 7 pollutants to µg/m³
   normalizedValue: number; // Truncated / converted numeric value used for sub-index
   averagingPeriod: AveragingPeriod;
+  isInstantaneousProxy: boolean; // True when 1-hr acute concentration is evaluated against 24-hr CPCB table
   subIndex: number | null; // CPCB Sub-Index (0 to 500+) or null if out of range / invalid
   cpcbCategory: CpcbCategory | null;
-  measurementTimestampUtc: string; // ISO 8601 UTC timestamp
-  isExceededNAAQS: boolean; // True if exceeding 24-hr/8-hr Indian NAAQS regulatory limits
+  observationTimestampUtc: string; // When the physical instrument took the reading
+  ingestionTimestampUtc: string;   // When BreatheWise ingested it
+  isExceededNAAQS: boolean;        // True if exceeding 24-hr/8-hr Indian NAAQS regulatory limits
   rawParameterName?: string;
   qualityFlags?: string[];
 }
@@ -57,7 +66,8 @@ export interface MonitoringStation {
   distanceKm?: number;
   supportedPollutants: PollutantCode[];
   lastReportedUtc?: string;
-  sourceProvider: 'OPENAQ' | 'CPCB_CAAQMS' | 'DATA_GOV_IN';
+  hasLiveTelemetryFeed: boolean;
+  sourceProvider: 'OPENAQ' | 'CPCB_CAAQMS' | 'DATA_GOV_IN' | 'MOCK_FIXTURE';
 }
 
 export interface CpcbHealthGuidance {
@@ -88,21 +98,33 @@ export interface CpcbAqiResult {
   subIndices: Record<PollutantCode, number | null>;
   dataSufficiency: CpcbDataSufficiency;
   methodology: 'CPCB_NAQI_INDIA_2014';
+  averagingNotice: string;
+}
+
+export interface TelemetryTimestamps {
+  observationTimeUtc: string;     // Exact timestamp when sensor recorded the concentration
+  ingestionTimeUtc: string;       // Timestamp when BreatheWise ingested from provider
+  retrievalTimeUtc: string;       // Timestamp when client received this response
+  cacheTimeUtc?: string;          // Timestamp when local database cache was persisted
+  observationLocalTime: string;   // Indian Standard Time (IST / UTC+05:30)
+  retrievalLocalTime: string;     // Indian Standard Time (IST / UTC+05:30)
 }
 
 export interface CanonicalAirQualityRecord {
+  status: TelemetryProvenanceStatus;
   station: MonitoringStation;
   measurements: Record<PollutantCode, CanonicalPollutantMeasurement | null>;
   cpcbAqi: CpcbAqiResult;
+  timestamps: TelemetryTimestamps;
   freshness: {
     state: FreshnessState;
-    measurementTimestampUtc: string;
-    measurementLocalTime: string; // Indian Standard Time (IST / UTC+05:30)
     ageMinutes: number;
     isStale: boolean;
+    measurementLocalTime?: string;
   };
   attribution: {
-    provider: string; // e.g. "OpenAQ v3 / CPCB CAAQMS"
+    provider: string; // e.g. "OpenAQ v3 / CPCB Network"
+    upstreamOwner?: string; // e.g. "Delhi Pollution Control Committee (DPCC)"
     license: string; // e.g. "Open Database License (ODbL) / Government Open Data License (GODL) India"
     attributionUrl: string;
     isLiveFeed: boolean;

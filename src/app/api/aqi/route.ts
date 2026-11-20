@@ -3,6 +3,7 @@ import { apiSuccess, apiError, handleApiError } from '@/lib/api-response';
 import { coordinatesQuerySchema } from '@/lib/validations';
 import { airQualityService } from '@/services/air-quality.service';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
+import { quantizeCoordinates } from '@/lib/air-quality/station-selector';
 
 export async function GET(req: NextRequest) {
   const clientIp = getClientIp(req);
@@ -19,17 +20,35 @@ export async function GET(req: NextRequest) {
       city: searchParams.get('city') || undefined,
     });
 
-    const result = await airQualityService.getAirQuality(parsed.lat, parsed.lon, parsed.city);
+    // Check optional fixture flag (only permitted in non-production)
+    const allowFixture = searchParams.get('fixture') === 'true' && process.env.NODE_ENV !== 'production';
+
+    const result = await airQualityService.getAirQuality(parsed.lat, parsed.lon, parsed.city, {
+      allowFixture,
+    });
+
+    // Privacy protection: Return privacy-quantized coordinates (~1.1 km precision)
+    const sanitizedCoords = quantizeCoordinates(parsed.lat, parsed.lon);
 
     if (result.status === 'NO_NEARBY_STATION') {
       return apiSuccess({
         status: 'NO_NEARBY_STATION',
+        provenanceStatus: 'NO_DATA',
         isLiveExternalFeed: false,
         notice: result.notice,
-        requestedCoordinates: {
-          latitude: parsed.lat,
-          longitude: parsed.lon,
-        },
+        requestedCoordinates: sanitizedCoords,
+        station: null,
+        cpcbAqi: null,
+      });
+    }
+
+    if (result.status === 'NO_DATA') {
+      return apiSuccess({
+        status: 'NO_DATA',
+        provenanceStatus: 'NO_DATA',
+        isLiveExternalFeed: false,
+        notice: result.notice,
+        requestedCoordinates: sanitizedCoords,
         station: null,
         cpcbAqi: null,
       });
@@ -41,7 +60,9 @@ export async function GET(req: NextRequest) {
 
     const d = result.data!;
     return apiSuccess({
+      ...d,
       status: 'SUCCESS',
+      provenanceStatus: d.status,
       isLiveExternalFeed: d.attribution?.isLiveFeed ?? false,
       source: d.attribution?.provider,
       stationName: d.station?.name,
@@ -58,7 +79,7 @@ export async function GET(req: NextRequest) {
         nh3: { value: d.measurements['NH3']?.normalizedValue ?? null, unit: 'µg/m³' },
         pb: { value: d.measurements['Pb']?.normalizedValue ?? null, unit: 'µg/m³' },
       },
-      ...d,
+      requestedCoordinates: sanitizedCoords,
       notice: result.notice,
     });
   } catch (error) {

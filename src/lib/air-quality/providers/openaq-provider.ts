@@ -1,6 +1,6 @@
 /**
  * BreatheWise AI — OpenAQ API v3 Provider Adapter
- * Module M4: Live Upstream Telemetry Integration
+ * Module M4.1: Live Upstream Telemetry Integration & Strict Validation
  * 
  * Complies with OpenAQ API v3 specification:
  * - Spatial querying: GET /v3/locations?coordinates=lat,lon&radius=meters
@@ -8,6 +8,7 @@
  * - Authentication: X-API-Key header (OPENAQ_API_KEY)
  * - Rate limiting: Exponential backoff with jitter on HTTP 429
  * - Timeout: 8-second AbortController guard
+ * - Validation: Validates numeric finite ranges, physical plausibility, and non-future timestamps
  */
 
 import {
@@ -17,6 +18,7 @@ import {
   PollutantCode,
 } from '../types';
 import { calculateHaversineDistanceKm } from '../station-selector';
+import { validateMeasurement } from '../measurement-validator';
 
 const OPENAQ_BASE_URL = 'https://api.openaq.org/v3';
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -45,10 +47,10 @@ export class OpenAQProvider implements AirQualityProvider {
   private getHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'User-Agent': 'BreatheWiseAI/1.4.0 (AirQualityIntelligence/Challenge6)',
+      'User-Agent': 'BreatheWiseAI/1.4.1 (AirQualityIntelligence/Challenge6)',
     };
-    if (this.apiKey) {
-      headers['X-API-Key'] = this.apiKey;
+    if (this.apiKey && this.apiKey.trim().length > 0) {
+      headers['X-API-Key'] = this.apiKey.trim();
     }
     return headers;
   }
@@ -90,6 +92,11 @@ export class OpenAQProvider implements AirQualityProvider {
     longitude: number,
     radiusKm = 50.0
   ): Promise<MonitoringStation[]> {
+    // If API key is not configured, do not issue unauthenticated calls that will fail with 401
+    if (!this.apiKey || this.apiKey.trim().length === 0) {
+      return [];
+    }
+
     try {
       const radiusMeters = Math.min(Math.round(radiusKm * 1000), 50000);
       const url = `${OPENAQ_BASE_URL}/locations?coordinates=${latitude},${longitude}&radius=${radiusMeters}&limit=10`;
@@ -128,11 +135,12 @@ export class OpenAQProvider implements AirQualityProvider {
           distanceKm,
           supportedPollutants,
           lastReportedUtc: item.datetimeLast?.utc || new Date().toISOString(),
+          hasLiveTelemetryFeed: true,
           sourceProvider: 'OPENAQ' as const,
         };
       });
     } catch {
-      // Graceful error recovery: Return empty array so caller cascades to secondary provider
+      // Graceful error recovery: Return empty array so caller returns transparent NO_DATA
       return [];
     }
   }
@@ -142,6 +150,10 @@ export class OpenAQProvider implements AirQualityProvider {
     measurements: Partial<Record<PollutantCode, CanonicalPollutantMeasurement>>;
     fetchedAt: Date;
   } | null> {
+    if (!this.apiKey || this.apiKey.trim().length === 0) {
+      return null;
+    }
+
     try {
       const cleanId = stationId.replace('openaq_', '');
       const url = `${OPENAQ_BASE_URL}/locations/${cleanId}/latest`;
@@ -153,23 +165,33 @@ export class OpenAQProvider implements AirQualityProvider {
       const results = Array.isArray(json?.results) ? json.results : [];
 
       const measurements: Partial<Record<PollutantCode, CanonicalPollutantMeasurement>> = {};
+      const nowIso = new Date().toISOString();
 
       for (const item of results) {
         const pName = String(item?.parameter?.name || '').toLowerCase();
         const code = PARAMETER_MAP[pName];
-        if (code && typeof item?.value === 'number') {
+        if (code) {
+          // Strictly validate observation value and timestamp
+          const validated = validateMeasurement(code, item?.value, item?.unit || 'µg/m³', item?.datetime?.utc);
+          if (!validated.isValid) {
+            continue; // Quarantine invalid/unphysical measurement
+          }
+
           measurements[code] = {
             pollutant: code,
-            value: item.value,
-            originalUnit: item.unit || 'µg/m³',
+            value: validated.value,
+            originalUnit: validated.unit,
             normalizedUnit: code === 'CO' ? 'mg/m³' : 'µg/m³',
-            normalizedValue: item.value,
+            normalizedValue: validated.value,
             averagingPeriod: '1_HOUR',
+            isInstantaneousProxy: true,
             subIndex: null, // Computed downstream by calculateCpcbAqi
             cpcbCategory: null,
-            measurementTimestampUtc: item.datetime?.utc || new Date().toISOString(),
+            observationTimestampUtc: validated.observationTimestampUtc,
+            ingestionTimestampUtc: nowIso,
             isExceededNAAQS: false,
             rawParameterName: item.parameter?.name,
+            qualityFlags: validated.qualityFlags,
           };
         }
       }
@@ -186,7 +208,8 @@ export class OpenAQProvider implements AirQualityProvider {
             longitude: Number(json?.location?.coordinates?.longitude) || 0,
           },
           supportedPollutants: Object.keys(measurements) as PollutantCode[],
-          lastReportedUtc: new Date().toISOString(),
+          lastReportedUtc: nowIso,
+          hasLiveTelemetryFeed: true,
           sourceProvider: 'OPENAQ',
         },
         measurements,

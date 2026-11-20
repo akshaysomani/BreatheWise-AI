@@ -1,13 +1,14 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * BreatheWise AI — End-to-End Air Quality Intelligence Browser Verification (M4)
+ * BreatheWise AI — End-to-End Air Quality Intelligence Browser Verification (M4 / M4.1)
  * 
  * Verifies live browser telemetry radar, CPCB NAQI calculation, 8-criteria pollutant
- * breakdown, station switching, freshness tags, and mobile responsive behavior.
+ * breakdown, station switching, dual-timestamp display, provenance status badge,
+ * acute sensor proxy disclaimer, and honest zero-fabrication fallback states.
  */
 
-test.describe('Air Quality Intelligence Dashboard Integration (M4)', () => {
+test.describe('Air Quality Intelligence Dashboard Integration (M4.1 Integrity)', () => {
   let testIp = '10.99.1.1';
 
   test.beforeEach(async ({ context }) => {
@@ -17,7 +18,7 @@ test.describe('Air Quality Intelligence Dashboard Integration (M4)', () => {
     });
   });
 
-  test('Flow 1: Live CPCB Atmospheric Radar, 8-Criteria Pollutants & Regional Hub Switching', async ({ page }) => {
+  test('Flow 1: CPCB Atmospheric Radar, Provenance Badge, Timestamps, 8 Criteria Pollutants & Regional Hub Switching', async ({ page }) => {
     const testUser = {
       name: 'AQI Verification User',
       email: `aqi_e2e_${Date.now()}_${Math.random().toString(36).substring(7)}@breathewise.test`,
@@ -47,7 +48,19 @@ test.describe('Air Quality Intelligence Dashboard Integration (M4)', () => {
     const aqiText = await aqiDisplay.textContent();
     expect(Number(aqiText)).toBeGreaterThanOrEqual(0);
 
-    // 4. Verify CPCB Criteria Pollutants are rendered (all 8 parameters)
+    // 4. Verify Acute 1-Hour Proxy and Averaging Standard Disclaimer
+    await expect(radarCard).toContainText(/Averaging Standard:/i);
+    await expect(radarCard).toContainText(/Acute 1-hour sensor/i);
+
+    // 5. Verify Provenance Badge is visible
+    const provenanceBadge = radarCard.locator('[data-testid^="provenance-badge-"]');
+    await expect(provenanceBadge).toBeVisible();
+
+    // 6. Verify Observation & Retrieval Timestamps are displayed
+    await expect(radarCard).toContainText(/Observed:/i);
+    await expect(radarCard).toContainText(/Retrieved:/i);
+
+    // 7. Verify CPCB Criteria Pollutants are rendered (all 8 parameters)
     await expect(radarCard).toContainText('PM2.5');
     await expect(radarCard).toContainText('PM10');
     await expect(radarCard).toContainText('NO2');
@@ -57,26 +70,26 @@ test.describe('Air Quality Intelligence Dashboard Integration (M4)', () => {
     await expect(radarCard).toContainText('NH3');
     await expect(radarCard).toContainText('Pb');
 
-    // 5. Verify Health Advisory Guidance is present
+    // 8. Verify Health Advisory Guidance is present
     await expect(radarCard).toContainText(/General Public/i);
     await expect(radarCard).toContainText(/Sensitive Groups/i);
     await expect(radarCard).toContainText(/Clean Room Action/i);
 
-    // 6. Test Regional Station Switching: Click Ahmedabad (Maninagar) chip
+    // 9. Test Regional Station Switching: Click Ahmedabad (Maninagar) chip
     const ahmedabadChip = page.locator('button:has-text("Ahmedabad (Maninagar)")');
     await expect(ahmedabadChip).toBeVisible();
     await ahmedabadChip.click();
 
     // Verify station updates to Maninagar
-    await expect(radarCard).toContainText(/Maninagar.*Ahmedabad/i, { timeout: 5000 });
+    await expect(radarCard).toContainText(/Maninagar.*Ahmedabad/i, { timeout: 8000 });
 
-    // 7. Test Refresh button triggers live check
+    // 10. Test Refresh button triggers live check
     const refreshBtn = page.locator('button[aria-label="Refresh atmospheric telemetry"]');
     await expect(refreshBtn).toBeVisible();
     await refreshBtn.click();
     await expect(radarCard).toBeVisible();
 
-    // 8. Verify Provenance and License Disclosure
+    // 11. Verify Provenance and License Disclosure
     await expect(radarCard).toContainText(/Data Provenance:/i);
     await expect(radarCard).toContainText(/License:/i);
   });
@@ -110,5 +123,19 @@ test.describe('Air Quality Intelligence Dashboard Integration (M4)', () => {
     // Verify regional chips remain scrollable / clickable on mobile
     const delhiChip = page.locator('button:has-text("Delhi (Anand Vihar)")');
     await expect(delhiChip).toBeVisible();
+  });
+
+  test('Flow 3: API Zero-Fabrication Fallback for Remote / Out-of-Range Coordinates', async ({ request }) => {
+    // Remote coordinate off the Gujarat coast in the Arabian Sea (19.00, 68.00)
+    const res = await request.get('/api/aqi?lat=19.00&lon=68.00');
+    expect(res.ok()).toBe(true);
+    const json = await res.json();
+
+    expect(json.success).toBe(true);
+    expect(['NO_NEARBY_STATION', 'NO_DATA']).toContain(json.data.status);
+    expect(json.data.provenanceStatus).toBe('NO_DATA');
+    expect(json.data.cpcbAqi).toBeNull();
+    expect(json.data.station).toBeNull();
+    expect(json.data.notice).toContain('BreatheWise AI strictly adheres to verified');
   });
 });

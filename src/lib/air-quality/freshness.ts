@@ -1,9 +1,9 @@
 /**
  * BreatheWise AI — Atmospheric Telemetry Freshness & Timezone Engine
- * Module M4: Freshness Assessment & Indian Standard Time (IST) Formatting
+ * Module M4.1: Four-Timestamp Architecture & Indian Standard Time (IST) Formatting
  */
 
-import { FreshnessState } from './types';
+import { FreshnessState, TelemetryTimestamps } from './types';
 
 export interface FreshnessEvaluation {
   state: FreshnessState;
@@ -70,6 +70,33 @@ export function evaluateFreshness(measurementDate: Date | string | null | undefi
     isStale,
     measurementTimestampUtc,
     measurementLocalTime,
+  };
+}
+
+/**
+ * Builds the complete 4-timestamp telemetry model preserving exact provenance:
+ * 1. Observation Time: When the physical sensor took the measurement
+ * 2. Ingestion Time: When BreatheWise ingested it from the upstream provider
+ * 3. Retrieval Time: When the client requested this telemetry
+ * 4. Cache Time: When the local database snapshot was written/updated
+ */
+export function buildTelemetryTimestamps(
+  observationDate: Date | string,
+  ingestionDate?: Date | string,
+  cacheDate?: Date | string
+): TelemetryTimestamps {
+  const obs = typeof observationDate === 'string' ? new Date(observationDate) : observationDate;
+  const ing = ingestionDate ? (typeof ingestionDate === 'string' ? new Date(ingestionDate) : ingestionDate) : new Date();
+  const now = new Date();
+  const cache = cacheDate ? (typeof cacheDate === 'string' ? new Date(cacheDate) : cacheDate) : undefined;
+
+  return {
+    observationTimeUtc: isNaN(obs.getTime()) ? now.toISOString() : obs.toISOString(),
+    ingestionTimeUtc: isNaN(ing.getTime()) ? now.toISOString() : ing.toISOString(),
+    retrievalTimeUtc: now.toISOString(),
+    cacheTimeUtc: cache && !isNaN(cache.getTime()) ? cache.toISOString() : undefined,
+    observationLocalTime: formatToIndianStandardTime(obs),
+    retrievalLocalTime: formatToIndianStandardTime(now),
   };
 }
 
