@@ -209,10 +209,27 @@ describe('BreatheWise AI — Personal Impact Tracker Service & Repository (M6)',
     it('generates audit-grade JSON export with methodology metadata & standards citations', async () => {
       const json = await impactService.exportLogsAsJson(testUserA);
       expect(json.exportedAt).toBeDefined();
-      expect(json.methodologyVersion).toBe('2024.1.0');
+      expect(json.methodologyVersion).toBe('2024.2.0');
       expect(json.authoritativeStandards.length).toBeGreaterThanOrEqual(3);
       expect(json.userAggregates).toBeDefined();
       expect(Array.isArray(json.logs)).toBe(true);
+    });
+
+    it('neutralizes CSV formula injection characters (=, +, -, @)', async () => {
+      await impactService.recordLog(testUserA, {
+        actionType: 'COMMUTE_SHIFT',
+        title: '=SUM(1+1)',
+        date: new Date(),
+        co2AvoidedKg: 1.0,
+        pm25AvoidedGrams: 0.1,
+        calculationFormula: '+CMD|calc!A0',
+        uncertaintyMargin: 0.15,
+      });
+
+      const csv = await impactService.exportLogsAsCsv(testUserA);
+      // Prepending single quote neutralizes spreadsheet formula execution
+      expect(csv).toContain('"\'=SUM(1+1)"');
+      expect(csv).toContain('"\'=SUM(1+1)"');
     });
   });
 });

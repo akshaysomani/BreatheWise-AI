@@ -11,6 +11,9 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Alert } from '@/components/ui/Alert';
 import { EmptyState } from '@/components/ui/EmptyState';
 import {
+  CALCULATION_ENGINE_VERSION,
+} from '@/services/calculation-engine';
+import {
   Activity,
   Plus,
   Download,
@@ -302,7 +305,7 @@ export function ImpactWorkspace() {
               Personal Impact Tracker
             </h2>
             <Badge variant="accent" size="sm">
-              Methodology v2024.1.0
+              Methodology v{CALCULATION_ENGINE_VERSION}
             </Badge>
           </div>
           <p className="text-xs text-[#68766C] mt-0.5">

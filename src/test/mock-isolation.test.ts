@@ -50,10 +50,13 @@ describe('Mock Data Hard Production Boundary & Isolation (M4.1 Audit)', () => {
 
   describe('2. AirQualityService Zero-Fabrication Production Boundary', () => {
     beforeEach(async () => {
-      // Clean non-seed test snapshots
+      // Clean test snapshots and snapshots near test coordinates to guarantee empty cache
       await prisma.airQualitySnapshot.deleteMany({
         where: {
-          stationId: { startsWith: 'test_' },
+          OR: [
+            { stationId: { startsWith: 'test_' } },
+            { latitude: { gte: 28.4, lte: 28.6 }, longitude: { gte: 77.25, lte: 77.5 } },
+          ],
         },
       });
     });
@@ -61,8 +64,8 @@ describe('Mock Data Hard Production Boundary & Isolation (M4.1 Audit)', () => {
     it('strictly returns NO_DATA in production when upstream live provider is unavailable and cache is empty', async () => {
       (process.env as any).NODE_ENV = 'production';
 
-      // Remote/un-cached coordinates (Noida Sector 128: 28.515, 77.375)
-      const result = await airQualityService.getAirQuality(28.515, 77.375, 'Noida');
+      // Remote/un-cached coordinates (Remote Leh: 34.1526, 77.5771)
+      const result = await airQualityService.getAirQuality(34.1526, 77.5771, 'Leh');
 
       // Must NOT return mock data or SUCCESS with synthetic numbers
       expect(result.status).toBe('NO_DATA');
@@ -75,7 +78,7 @@ describe('Mock Data Hard Production Boundary & Isolation (M4.1 Audit)', () => {
     it('never assigns MOCK provenance status in production mode', async () => {
       (process.env as any).NODE_ENV = 'production';
 
-      const result = await airQualityService.getAirQuality(28.515, 77.375);
+      const result = await airQualityService.getAirQuality(34.1526, 77.5771);
       expect(result.provenanceStatus).not.toBe('MOCK');
       expect(result.status).not.toBe('MOCK');
     });

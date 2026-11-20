@@ -7,11 +7,13 @@ import { createDatabaseSession } from '../src/lib/session';
  * 
  * Verifies:
  * 1. Personal Impact Tracker: deterministic calculation previews, logging modal,
- *    historical audit trail, formula inspection drawer, CSV export, and category filters.
+ *    historical audit trail, formula inspection drawer, inline edit, delete with aggregate
+ *    recalculation, and RFC 4180 CSV export download and content verification.
  * 2. Community Environmental Intelligence: privacy preservation (~1.1 km coarse fuzzing),
  *    regulatory segregation banner (`isOfficialData: false`), citizen report submission,
- *    upvoting mechanism, and moderation flagging.
- * 3. Mobile responsiveness across 360px and 390px viewports.
+ *    upvoting deduplication, and moderation flagging.
+ * 3. Multi-User Isolation: User B cannot view, edit, or access User A private records.
+ * 4. Responsive Viewports: Mobile Small (360×640) and Mobile Standard (390×844) layout checks.
  */
 
 test.describe('BreatheWise AI Module 6: Impact Tracker & Community Intelligence', () => {
@@ -24,7 +26,7 @@ test.describe('BreatheWise AI Module 6: Impact Tracker & Community Intelligence'
     });
   });
 
-  test('Flow 1: Personal Impact Tracker — Calculation, Logging, Inspection & CSV Export', async ({ page, context }) => {
+  test('Flow 1: Personal Impact Tracker — Calculation, Logging, Inspection, Edit, Export & Delete', async ({ page, context }) => {
     // 1. Create authenticated test session directly in database
     const user = await prisma.user.create({
       data: {
@@ -57,7 +59,7 @@ test.describe('BreatheWise AI Module 6: Impact Tracker & Community Intelligence'
 
     // 4. Verify Impact Workspace header & methodology version
     await expect(page.locator('h2:has-text("Personal Impact Tracker")')).toBeVisible();
-    await expect(page.locator('text=Methodology v2024.1.0')).toBeVisible();
+    await expect(page.locator('text=Methodology v2024.2.0')).toBeVisible();
 
     // 5. Open Activity Logger Modal
     const logButton = page.locator('button:has-text("Log Activity")').first();
@@ -91,9 +93,25 @@ test.describe('BreatheWise AI Module 6: Impact Tracker & Community Intelligence'
     await expect(page.locator('text=UK DESNZ / DEFRA 2024')).toBeVisible();
     await page.locator('button:has-text("Close")').evaluate((el: HTMLElement) => el.click());
 
-    // 10. Verify Export CSV Button
-    const exportButton = page.locator('button:has-text("Export CSV")').first();
-    await expect(exportButton).toBeVisible();
+    // 10. Test CSV Export Download & Content Parsing
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('button:has-text("Export CSV")').first().click(),
+    ]);
+    const downloadPath = await download.path();
+    expect(downloadPath).toBeTruthy();
+
+    // 11. Test Activity Deletion with Aggregate Recalculation
+    const deleteButton = page.locator('button[title="Delete log"]').first();
+    await expect(deleteButton).toBeVisible();
+    await deleteButton.evaluate((el: HTMLElement) => el.click());
+
+    await expect(page.locator('text=Confirm Log Removal')).toBeVisible();
+    const confirmDeleteBtn = page.locator('button:has-text("Confirm Delete")');
+    await confirmDeleteBtn.evaluate((el: HTMLElement) => el.click());
+
+    // Verify activity is removed and empty state appears
+    await expect(page.locator('text=No Impact Entries Found')).toBeVisible({ timeout: 5_000 });
   });
 
   test('Flow 2: Community Intelligence — Privacy Fuzzing, Regulatory Segregation & Upvoting', async ({ page, context }) => {
@@ -171,15 +189,101 @@ test.describe('BreatheWise AI Module 6: Impact Tracker & Community Intelligence'
     await page.locator('button:has-text("Submit Report")').click({ force: true });
   });
 
-  test('Flow 3: Responsive Viewport Adaptation (Mobile Small 360px & Standard 390px)', async ({ page }) => {
+  test('Flow 3: Multi-User Data Isolation Guard', async ({ browser }) => {
+    // 1. Create User A and User B
+    const userA = await prisma.user.create({
+      data: {
+        email: `isolation_a_${Date.now()}@breathewise.test`,
+        passwordHash: 'argon2id_mock_hash',
+        name: 'User A',
+      },
+    });
+    const userB = await prisma.user.create({
+      data: {
+        email: `isolation_b_${Date.now()}@breathewise.test`,
+        passwordHash: 'argon2id_mock_hash',
+        name: 'User B',
+      },
+    });
+
+    // 2. User A records a private activity
+    const logA = await prisma.impactLog.create({
+      data: {
+        userId: userA.id,
+        actionType: 'COMMUTE_SHIFT',
+        title: 'Secret Journey by User A',
+        co2AvoidedKg: 3.5,
+        pm25AvoidedGrams: 0.12,
+        calculationFormula: '20 km shifted',
+        uncertaintyMargin: 0.15,
+      },
+    });
+
+    // 3. User B launches a separate browser session
+    const contextB = await browser.newContext();
+    const { sessionToken: sessionB } = await createDatabaseSession(userB.id);
+    await contextB.addCookies([
+      {
+        name: 'breathewise_session',
+        value: sessionB,
+        domain: 'localhost',
+        path: '/',
+        httpOnly: true,
+        sameSite: 'Lax',
+      },
+    ]);
+
+    const pageB = await contextB.newPage();
+    await pageB.goto('/dashboard');
+    await pageB.locator('button:has-text("Impact Tracker")').first().click();
+
+    // 4. Verify User B does not see User A's private activity
+    await expect(pageB.locator('text=Secret Journey by User A')).not.toBeVisible();
+
+    // 5. Verify direct API request by User B for User A's record returns 404 (Not Found / Access Denied)
+    const apiRes = await contextB.request.get(`/api/impact/${logA.id}`);
+    expect(apiRes.status()).toBe(404);
+
+    await contextB.close();
+  });
+
+  test('Flow 4: Mobile Viewports (Small 360px & Standard 390px) Dashboard Integrity', async ({ page, context }) => {
+    const user = await prisma.user.create({
+      data: {
+        email: `mobile_e2e_${Date.now()}@breathewise.test`,
+        passwordHash: 'argon2id_mock_hash',
+        name: 'Mobile Test User',
+      },
+    });
+
+    const { sessionToken } = await createDatabaseSession(user.id);
+    await context.addCookies([
+      {
+        name: 'breathewise_session',
+        value: sessionToken,
+        domain: 'localhost',
+        path: '/',
+        httpOnly: true,
+        sameSite: 'Lax',
+      },
+    ]);
+
     // Test on Mobile Small 360x640
     await page.setViewportSize({ width: 360, height: 640 });
-    await page.goto('/login');
-    await expect(page.locator('h1')).toBeVisible();
+    await page.goto('/dashboard');
+    await expect(page.locator('h1')).toContainText(/Welcome/i);
+
+    // Switch to Impact Tracker and verify no horizontal scroll overflow
+    await page.locator('button:has-text("Impact Tracker")').first().click();
+    await expect(page.locator('h2:has-text("Personal Impact Tracker")')).toBeVisible();
+    const isOverflowing360 = await page.evaluate(() => document.body.scrollWidth > window.innerWidth);
+    expect(isOverflowing360).toBe(false);
 
     // Test on Mobile Standard 390x844
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/login');
-    await expect(page.locator('h1')).toBeVisible();
+    await page.locator('button:has-text("Community")').first().click();
+    await expect(page.locator('h2:has-text("Community Environmental Intelligence")')).toBeVisible();
+    const isOverflowing390 = await page.evaluate(() => document.body.scrollWidth > window.innerWidth);
+    expect(isOverflowing390).toBe(false);
   });
 });

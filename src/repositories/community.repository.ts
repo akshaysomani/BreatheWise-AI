@@ -75,7 +75,6 @@ export const communityRepository = {
         where,
         select: {
           id: true,
-          userId: true,
           reportType: true,
           severity: true,
           description: true,

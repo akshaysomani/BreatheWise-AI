@@ -113,6 +113,22 @@ describe('BreatheWise AI — Community Environmental Intelligence (M6)', () => {
       const feed = await communityService.getFilteredFeed({});
       expect(feed.reports.every((r) => r.status === 'ACTIVE')).toBe(true);
     });
+
+    it('does NOT expose private account userId in public feed items', async () => {
+      const report = await communityService.submitReport(testCitizenA, {
+        reportType: 'VISIBLE_SMOG',
+        severity: 'MILD',
+        description: 'Observation without author identification.',
+        latitude: 28.61,
+        longitude: 77.20,
+        neighborhood: 'Central Delhi',
+      });
+
+      const feed = await communityService.getFilteredFeed({});
+      const fetched = feed.reports.find((r) => r.id === report.id);
+      expect(fetched).toBeDefined();
+      expect((fetched as any).userId).toBeUndefined();
+    });
   });
 
   describe('4. Upvoting Mechanism', () => {

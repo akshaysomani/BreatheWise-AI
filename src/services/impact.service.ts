@@ -88,7 +88,13 @@ export const impactService = {
 
     const escapeCsvField = (val: any) => {
       if (val === null || val === undefined) return '""';
-      const str = String(val).replace(/"/g, '""');
+      let str = String(val);
+      // Mitigate CSV Formula Injection (CWE-1236 / OWASP)
+      // Prepend single quote if field starts with formula initiation characters
+      if (/^[=+\-@\t\r]/.test(str)) {
+        str = `'${str}`;
+      }
+      str = str.replace(/"/g, '""');
       return `"${str}"`;
     };
 
