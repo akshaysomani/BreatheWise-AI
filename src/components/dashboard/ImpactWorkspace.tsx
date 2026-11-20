@@ -1,38 +1,30 @@
 'use client';
 
-import React, { useState, useEffect, useTransition } from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/Card';
+import React, { useState, useEffect } from 'react';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
-import { Alert } from '@/components/ui/Alert';
 import { EmptyState } from '@/components/ui/EmptyState';
-import {
-  CALCULATION_ENGINE_VERSION,
-} from '@/services/calculation-engine';
+import { CALCULATION_ENGINE_VERSION } from '@/services/calculation-engine';
 import {
   Activity,
   Plus,
   Download,
   Filter,
   Calendar,
-  Layers,
   Leaf,
-  Zap,
   Trash2,
   Edit2,
   Info,
   ShieldCheck,
-  CheckCircle2,
-  ArrowRight,
-  TrendingDown,
   Car,
   Recycle,
   Sparkles,
-  ExternalLink,
+  FileCode,
 } from 'lucide-react';
 
 interface ImpactLog {
@@ -73,6 +65,11 @@ export function ImpactWorkspace() {
   const [selectedLogForInspect, setSelectedLogForInspect] = useState<ImpactLog | null>(null);
   const [deleteConfirmModalOpen, setDeleteConfirmModalOpen] = useState(false);
   const [logToDelete, setLogToDelete] = useState<ImpactLog | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [logToEdit, setLogToEdit] = useState<ImpactLog | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Log Form State
   const [logDomain, setLogDomain] = useState<'TRANSPORT' | 'WASTE' | 'ENERGY'>('TRANSPORT');
@@ -96,12 +93,15 @@ export function ImpactWorkspace() {
   const [calcPreview, setCalcPreview] = useState<{
     co2AvoidedKg: number;
     pm25AvoidedGrams: number;
+    pm25Status?: 'CALCULATED' | 'NOT_QUANTIFIED' | 'UNAVAILABLE';
+    status: string;
     formula: string;
     uncertainty: number;
     source: string;
   } | null>(null);
   const [savingLog, setSavingLog] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportingJson, setExportingJson] = useState(false);
 
   // Fetch Logs
   const fetchLogs = async () => {
@@ -181,9 +181,11 @@ export function ImpactWorkspace() {
           setCalcPreview({
             co2AvoidedKg: json.data.co2AvoidedKg,
             pm25AvoidedGrams: json.data.pm25AvoidedGrams,
+            pm25Status: json.data.pm25Status,
+            status: json.data.status,
             formula: json.data.calculationFormula,
             uncertainty: json.data.uncertaintyMargin,
-            source: json.data.standardReference || 'UK DESNZ / DEFRA / CEA 2024',
+            source: json.data.factorSource || 'UK DESNZ / DEFRA / CEA 2024',
           });
         }
       } catch {
@@ -237,7 +239,7 @@ export function ImpactWorkspace() {
           pm25AvoidedGrams: calcPreview.pm25AvoidedGrams,
           distanceShiftedKm,
           calculationFormula: calcPreview.formula,
-          uncertaintyMargin: calcPreview.uncertainty,
+          uncertaintyMargin: calcPreview.uncertainty > 0 ? calcPreview.uncertainty : 0.15,
         }),
       });
 
@@ -251,6 +253,34 @@ export function ImpactWorkspace() {
       alert(err.message || 'Error recording log');
     } finally {
       setSavingLog(false);
+    }
+  };
+
+  // Handle Edit Log
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!logToEdit) return;
+    setSavingEdit(true);
+
+    try {
+      const res = await fetch(`/api/impact/${logToEdit.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          date: new Date(editDate).toISOString(),
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to update impact log');
+
+      setEditModalOpen(false);
+      setLogToEdit(null);
+      fetchLogs();
+    } catch (err: any) {
+      alert(err.message || 'Error updating log');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -270,7 +300,7 @@ export function ImpactWorkspace() {
 
   // Handle CSV Export
   const handleExportCsv = async () => {
-    setExporting(true);
+    setExportingCsv(true);
     try {
       const params = new URLSearchParams();
       if (selectedCategory !== 'ALL') params.append('category', selectedCategory);
@@ -291,7 +321,35 @@ export function ImpactWorkspace() {
     } catch (err: any) {
       alert(err.message || 'Failed to export CSV');
     } finally {
-      setExporting(false);
+      setExportingCsv(false);
+    }
+  };
+
+  // Handle JSON Export
+  const handleExportJson = async () => {
+    setExportingJson(true);
+    try {
+      const params = new URLSearchParams();
+      if (selectedCategory !== 'ALL') params.append('category', selectedCategory);
+      params.append('format', 'json');
+
+      const res = await fetch(`/api/impact?${params.toString()}`);
+      if (!res.ok) throw new Error('JSON export failed');
+
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `breathewise-impact-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.message || 'Failed to export JSON');
+    } finally {
+      setExportingJson(false);
     }
   };
 
@@ -309,7 +367,7 @@ export function ImpactWorkspace() {
             </Badge>
           </div>
           <p className="text-xs text-[#68766C] mt-0.5">
-            Deterministic avoided emissions and primary particulate matter reduction tracking with zero simulated metrics.
+            Deterministic avoided emissions and resource conservation tracking with zero simulated metrics.
           </p>
         </div>
 
@@ -318,10 +376,19 @@ export function ImpactWorkspace() {
             variant="outline"
             size="sm"
             onClick={handleExportCsv}
-            isLoading={exporting}
+            isLoading={exportingCsv}
             leftIcon={<Download className="w-3.5 h-3.5" />}
           >
             Export CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportJson}
+            isLoading={exportingJson}
+            leftIcon={<FileCode className="w-3.5 h-3.5" />}
+          >
+            Export JSON
           </Button>
           <Button
             variant="primary"
@@ -364,9 +431,15 @@ export function ImpactWorkspace() {
                   Avoided Particulates
                 </span>
                 <span className="text-2xl font-extrabold text-[#287A4B] font-[var(--font-heading)]">
-                  {aggregates.totalPM25AvoidedGrams.toFixed(2)} <span className="text-sm font-semibold">g PM2.5</span>
+                  {aggregates.totalPM25AvoidedGrams > 0 ? (
+                    <>{aggregates.totalPM25AvoidedGrams.toFixed(2)} <span className="text-sm font-semibold">g PM2.5</span></>
+                  ) : (
+                    <>0.00 <span className="text-sm font-semibold">g PM2.5</span></>
+                  )}
                 </span>
-                <span className="text-[10px] text-[#68766C] block">Primary exhaust & stack prevention</span>
+                <span className="text-[10px] text-[#68766C] block">
+                  {aggregates.totalPM25AvoidedGrams > 0 ? 'Verified non-combustion' : 'Zero fabricated metrics (Audit Pass)'}
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -454,21 +527,21 @@ export function ImpactWorkspace() {
         </div>
       </div>
 
-      {/* Main Historical Table / Feed */}
+      {/* Historical Audit Trail Table */}
       <Card className="bg-white border-[#E2E8DE]">
-        <CardHeader className="py-3 px-4 border-b border-[#E2E8DE]">
+        <CardHeader className="pb-3 border-b border-[#E2E8DE]">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-bold text-[#27352D]">
-              Historical Audit Trail ({totalCount} entries)
-            </CardTitle>
-            <span className="text-[11px] text-[#68766C]">
-              Strictly authenticated • User data isolation enforced
-            </span>
+            <div>
+              <CardTitle className="text-base text-[#27352D]">Historical Audit Trail</CardTitle>
+              <CardDescription className="text-xs text-[#68766C]">
+                Chronological ledger of user-confirmed environmental actions ({totalCount} entries)
+              </CardDescription>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
-            <div className="py-12 flex justify-center">
+            <div className="p-8 flex items-center justify-center">
               <Spinner size="md" />
             </div>
           ) : logs.length > 0 ? (
@@ -485,18 +558,16 @@ export function ImpactWorkspace() {
                           log.actionType === 'COMMUTE_SHIFT'
                             ? 'accent'
                             : log.actionType === 'WASTE_DIVERSION'
-                            ? 'success'
-                            : 'secondary'
+                            ? 'warning'
+                            : 'success'
                         }
                         size="sm"
                       >
                         {log.actionType.replace(/_/g, ' ')}
                       </Badge>
-                      <h4 className="text-sm font-bold text-[#27352D] font-[var(--font-heading)]">
-                        {log.title}
-                      </h4>
+                      <h4 className="text-xs font-bold text-[#27352D]">{log.title}</h4>
                     </div>
-                    <p className="text-xs font-mono text-[#68766C] line-clamp-1">
+                    <p className="text-[11px] text-[#68766C] font-mono break-all">
                       {log.calculationFormula}
                     </p>
                     <div className="flex items-center gap-3 text-[11px] text-[#68766C]">
@@ -519,12 +590,31 @@ export function ImpactWorkspace() {
                       <span className="text-sm font-bold text-[#397A55] block">
                         +{log.co2AvoidedKg.toFixed(2)} kg CO2e
                       </span>
-                      <span className="text-xs font-semibold text-[#287A4B] block">
-                        +{log.pm25AvoidedGrams.toFixed(2)} g PM2.5
-                      </span>
+                      {log.pm25AvoidedGrams > 0 ? (
+                        <span className="text-xs font-semibold text-[#287A4B] block">
+                          +{log.pm25AvoidedGrams.toFixed(2)} g PM2.5
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-medium text-[#68766C] block">
+                          PM2.5: Not Quantified
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1 border-l border-[#E2E8DE] pl-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setLogToEdit(log);
+                          setEditTitle(log.title);
+                          setEditDate(new Date(log.date).toISOString().split('T')[0]);
+                          setEditModalOpen(true);
+                        }}
+                        title="Edit log"
+                      >
+                        <Edit2 className="w-4 h-4 text-[#397A55]" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -608,29 +698,29 @@ export function ImpactWorkspace() {
                   : 'text-[#68766C] hover:text-[#27352D]'
               }`}
             >
-              <Zap className="w-3.5 h-3.5" /> Energy Efficiency
+              <Leaf className="w-3.5 h-3.5" /> Energy Efficiency
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
               id="log-title"
-              label="Activity Title (Optional)"
-              placeholder="e.g. Metro office commute or Compost batch"
+              label="Activity Title"
+              placeholder="e.g. Metro Commute to Connaught Place"
               value={formTitle}
               onChange={(e) => setFormTitle(e.target.value)}
             />
             <Input
               id="log-date"
               type="date"
-              label="Date of Action"
+              label="Activity Date"
               value={formDate}
               onChange={(e) => setFormDate(e.target.value)}
               required
             />
           </div>
 
-          {/* Dynamic Domain Inputs */}
+          {/* Domain-Specific Inputs */}
           {logDomain === 'TRANSPORT' && (
             <div className="space-y-3 bg-[#F7F8F3] p-3 rounded-xl border border-[#E2E8DE]">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -644,27 +734,28 @@ export function ImpactWorkspace() {
                 />
                 <Select
                   id="tr-base"
-                  label="Replaced Baseline Mode"
+                  label="Baseline Mode"
                   value={transportBaseline}
                   onChange={(e) => setTransportBaseline(e.target.value)}
                   options={[
-                    { value: 'SOLO_CAR', label: 'Solo Petrol Car (171 g/km)' },
-                    { value: 'DIESEL_CAR', label: 'Diesel Car (165 g/km)' },
-                    { value: 'MOTORCYCLE', label: 'Motorcycle / Scooter (105 g/km)' },
-                    { value: 'BUS', label: 'Standard Diesel Bus (89 g/km)' },
+                    { value: 'SOLO_CAR', label: 'Solo Petrol Car (0.171 kg/km)' },
+                    { value: 'DIESEL_CAR', label: 'Solo Diesel Car (0.165 kg/km)' },
+                    { value: 'MOTORCYCLE', label: 'Motorcycle ICE (0.105 kg/km)' },
+                    { value: 'AUTO_RICKSHAW_CNG', label: 'Auto Rickshaw CNG (0.078 kg/km)' },
+                    { value: 'BUS', label: 'Municipal Bus (0.089 kg/km)' },
                   ]}
                 />
                 <Select
                   id="tr-opt"
-                  label="Low-Emission Shift"
+                  label="Shifted Transit Mode"
                   value={transportOptimized}
                   onChange={(e) => setTransportOptimized(e.target.value)}
                   options={[
-                    { value: 'METRO', label: 'Metro / Rapid Rail (35 g/km)' },
-                    { value: 'ELECTRIC_VEHICLE', label: 'Electric Vehicle (52 g/km)' },
-                    { value: 'CARPOOL', label: 'Carpool (2+ shared) (85 g/km)' },
-                    { value: 'BICYCLE', label: 'Bicycle (0 g/km)' },
-                    { value: 'WALK', label: 'Walking (0 g/km)' },
+                    { value: 'METRO', label: 'Urban Metro (0.035 kg/km)' },
+                    { value: 'BUS', label: 'Municipal Bus (0.089 kg/km)' },
+                    { value: 'CARPOOL', label: 'Carpooling (Shared Car)' },
+                    { value: 'BICYCLE', label: 'Bicycle (Zero Emission)' },
+                    { value: 'WALK', label: 'Walking (Zero Emission)' },
                   ]}
                 />
               </div>
@@ -676,15 +767,16 @@ export function ImpactWorkspace() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Select
                   id="ws-type"
-                  label="Waste Diversion Type"
+                  label="Waste Diversion Pathway"
                   value={wasteType}
                   onChange={(e) => setWasteType(e.target.value)}
                   options={[
                     { value: 'ORGANIC_COMPOSTING', label: 'Organic Composting (0.48 kg CO2e/kg)' },
-                    { value: 'PLASTIC_RECYCLING', label: 'Plastic Recycling (1.25 kg CO2e/kg)' },
-                    { value: 'PAPER_CARDBOARD', label: 'Paper & Cardboard (0.95 kg CO2e/kg)' },
+                    { value: 'PLASTIC_RECYCLING', label: 'Rigid Plastics Recycling (1.25 kg CO2e/kg)' },
+                    { value: 'PAPER_CARDBOARD_RECYCLING', label: 'Paper & Cardboard (0.95 kg CO2e/kg)' },
                     { value: 'ALUMINUM_RECYCLING', label: 'Aluminum Cans (8.14 kg CO2e/kg)' },
                     { value: 'GLASS_RECYCLING', label: 'Glass Containers (0.28 kg CO2e/kg)' },
+                    { value: 'REUSABLE_BAG_OR_CONTAINER', label: 'Reusable Bag/Container (Qualitative)' },
                   ]}
                 />
                 <Input
@@ -746,9 +838,16 @@ export function ImpactWorkspace() {
                 </div>
                 <div className="bg-white p-2 rounded-lg border border-[#E2E8DE]">
                   <span className="text-[10px] text-[#68766C] block">Primary PM2.5 Prevented</span>
-                  <span className="text-base font-extrabold text-[#287A4B]">
-                    +{calcPreview.pm25AvoidedGrams.toFixed(2)} g PM2.5
-                  </span>
+                  {calcPreview.pm25Status === 'NOT_QUANTIFIED' || calcPreview.pm25AvoidedGrams === 0 ? (
+                    <div>
+                      <span className="text-sm font-bold text-[#68766C] block">Not Quantified</span>
+                      <span className="text-[9px] text-[#8C9B90] block">Zero fabrication guarantee</span>
+                    </div>
+                  ) : (
+                    <span className="text-base font-extrabold text-[#287A4B]">
+                      +{calcPreview.pm25AvoidedGrams.toFixed(2)} g PM2.5
+                    </span>
+                  )}
                 </div>
               </div>
               <p className="text-[11px] font-mono text-[#27352D] bg-white p-2 rounded border border-[#E2E8DE] break-all">
@@ -771,7 +870,48 @@ export function ImpactWorkspace() {
         </form>
       </Modal>
 
-      {/* Inspect Calculation Modal */}
+      {/* Edit Log Modal */}
+      {logToEdit && (
+        <Modal
+          isOpen={editModalOpen}
+          onClose={() => setEditModalOpen(false)}
+          title="Edit Environmental Log"
+          size="md"
+        >
+          <form onSubmit={handleSaveEdit} className="space-y-4">
+            <Input
+              id="edit-title"
+              label="Activity Title"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              required
+            />
+            <Input
+              id="edit-date"
+              type="date"
+              label="Activity Date"
+              value={editDate}
+              onChange={(e) => setEditDate(e.target.value)}
+              required
+            />
+            <div className="p-3 bg-[#EEF3EA] rounded-lg text-xs text-[#27352D] space-y-1">
+              <span className="font-bold block">Recorded Impact:</span>
+              <span>+{logToEdit.co2AvoidedKg.toFixed(2)} kg CO2e</span>
+              {logToEdit.pm25AvoidedGrams > 0 && <span> • +{logToEdit.pm25AvoidedGrams.toFixed(2)} g PM2.5</span>}
+            </div>
+            <div className="flex justify-end gap-3 pt-3 border-t border-[#E2E8DE]">
+              <Button variant="outline" size="sm" type="button" onClick={() => setEditModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" type="submit" isLoading={savingEdit}>
+                Save Changes
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Inspection Modal */}
       {selectedLogForInspect && (
         <Modal
           isOpen={inspectModalOpen}
@@ -780,21 +920,16 @@ export function ImpactWorkspace() {
           size="md"
         >
           <div className="space-y-4 text-xs text-[#27352D]">
-            <div className="bg-[#F7F8F3] p-3 rounded-lg border border-[#E2E8DE] space-y-1.5">
-              <span className="font-bold text-[#27352D] block text-sm">{selectedLogForInspect.title}</span>
-              <span className="text-[#68766C]">Action ID: {selectedLogForInspect.id}</span>
-              <span className="block text-[#68766C]">
-                Logged Date: {new Date(selectedLogForInspect.date).toUTCString()}
-              </span>
+            <div>
+              <span className="text-[#68766C] block">Logged Activity</span>
+              <h4 className="text-sm font-bold">{selectedLogForInspect.title}</h4>
             </div>
 
-            <div className="space-y-1">
-              <span className="font-bold text-[#397A55] uppercase tracking-wider block">
-                Mathematical Formula
-              </span>
-              <div className="p-3 bg-[#EEF3EA] rounded-lg font-mono text-xs break-all border border-[#397A55]/30">
+            <div className="p-3 bg-[#F7F8F3] rounded-lg border border-[#E2E8DE] space-y-1">
+              <span className="font-bold block">Mathematical Formula</span>
+              <p className="font-mono text-[#397A55] break-all">
                 {selectedLogForInspect.calculationFormula}
-              </div>
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -807,7 +942,9 @@ export function ImpactWorkspace() {
               <div className="p-3 bg-white rounded-lg border border-[#E2E8DE]">
                 <span className="text-[#68766C] block">Avoided PM2.5</span>
                 <span className="text-base font-bold text-[#287A4B]">
-                  +{selectedLogForInspect.pm25AvoidedGrams} g PM2.5
+                  {selectedLogForInspect.pm25AvoidedGrams > 0
+                    ? `+${selectedLogForInspect.pm25AvoidedGrams} g PM2.5`
+                    : 'Not Quantified'}
                 </span>
               </div>
             </div>

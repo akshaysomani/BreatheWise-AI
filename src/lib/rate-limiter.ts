@@ -1,11 +1,13 @@
 import { NextRequest } from 'next/server';
 
 /**
- * BreatheWise AI — Defensive Rate Limiting Engine
+ * BreatheWise AI — Defensive Rate Limiting & Deduplication Engine
  * 
- * ARCHITECTURAL AUDIT & LIMITATIONS (M2.1):
+ * ARCHITECTURAL AUDIT & LIMITATIONS (M2.1 / M6):
  * - IN-MEMORY LIMITATION: This implementation uses a process-local sliding-window in memory (`Map<string, RateLimitRecord>`).
  * - SCOPE: Ideal for single-instance Node.js servers, local development, and CI regression testing.
+ * - TTL RETENTION FIX: Stores `maxWindowMs` per key so that long-window records (e.g. 24-hour upvote deduplication: 86,400,000 ms)
+ *   are NOT prematurely pruned by the short-term garbage collection interval.
  * - PRODUCTION CLUSTERING NOTICE: In multi-instance deployments (e.g., Kubernetes pods or Vercel serverless functions),
  *   each instance has its own memory map. An attacker can theoretically partition requests across instances.
  *   For multi-node production deployment, configure the `DistributedRateLimiter` backed by Redis / Upstash sliding-window.
@@ -13,6 +15,7 @@ import { NextRequest } from 'next/server';
 
 interface RateLimitRecord {
   timestamps: number[];
+  maxWindowMs?: number;
 }
 
 const ipCache = new Map<string, RateLimitRecord>();
@@ -22,7 +25,8 @@ if (typeof setInterval !== 'undefined') {
   setInterval(() => {
     const now = Date.now();
     for (const [key, record] of ipCache.entries()) {
-      record.timestamps = record.timestamps.filter((ts) => now - ts < 60_000);
+      const windowMs = record.maxWindowMs || 60_000;
+      record.timestamps = record.timestamps.filter((ts) => now - ts < windowMs);
       if (record.timestamps.length === 0) {
         ipCache.delete(key);
       }
@@ -60,52 +64,53 @@ export function getClientIp(req: NextRequest): string {
     return platformIp;
   }
 
-  // 2. Inspect X-Real-IP
-  const realIp = req.headers.get('x-real-ip');
-  if (realIp) {
-    const cleaned = realIp.trim().replace(/^::ffff:/, '');
-    if (IPV4_REGEX.test(cleaned) || IPV6_REGEX.test(cleaned)) {
-      return cleaned;
-    }
-  }
-
-  // 3. Inspect X-Forwarded-For
+  // 2. x-forwarded-for (can contain multiple comma-separated IPs; first is original client)
   const forwardedFor = req.headers.get('x-forwarded-for');
   if (forwardedFor) {
-    // The leftmost IP is the original client, subsequent are proxies
-    const firstIp = forwardedFor.split(',')[0].trim().replace(/^::ffff:/, '');
-    if (IPV4_REGEX.test(firstIp) || IPV6_REGEX.test(firstIp)) {
-      return firstIp;
+    const rawClient = forwardedFor.split(',')[0].trim();
+    const cleanClient = rawClient.replace(/^::ffff:/, '');
+    if (IPV4_REGEX.test(cleanClient) || IPV6_REGEX.test(cleanClient)) {
+      return cleanClient;
     }
   }
 
-  // Fallback to secure localhost representation
+  // 3. x-real-ip header fallback
+  const realIp = req.headers.get('x-real-ip');
+  if (realIp) {
+    const cleanReal = realIp.trim().replace(/^::ffff:/, '');
+    if (IPV4_REGEX.test(cleanReal) || IPV6_REGEX.test(cleanReal)) {
+      return cleanReal;
+    }
+  }
+
   return '127.0.0.1';
 }
 
 /**
- * Checks sliding-window rate limit for a given identifier (IP or User ID).
+ * Sliding-window in-memory rate limiter and deduplicator.
  */
 export function checkRateLimit(
-  identifier: string,
-  limit = 60,
+  key: string,
+  limit: number,
   windowMs = 60_000
 ): RateLimitResult {
-  const sanitizedIdentifier = identifier.trim().substring(0, 128);
   const now = Date.now();
-  let record = ipCache.get(sanitizedIdentifier);
+  let record = ipCache.get(key);
 
   if (!record) {
-    record = { timestamps: [] };
-    ipCache.set(sanitizedIdentifier, record);
+    record = { timestamps: [], maxWindowMs: windowMs };
+    ipCache.set(key, record);
+  } else {
+    record.maxWindowMs = Math.max(record.maxWindowMs || 60_000, windowMs);
   }
 
-  // Filter timestamps within current rolling window
+  // Filter out timestamps outside the active sliding window
   record.timestamps = record.timestamps.filter((ts) => now - ts < windowMs);
 
   if (record.timestamps.length >= limit) {
-    const oldest = record.timestamps[0];
-    const resetMs = Math.max(0, windowMs - (now - oldest));
+    const oldestTimestamp = record.timestamps[0];
+    const resetMs = Math.max(0, windowMs - (now - oldestTimestamp));
+
     return {
       allowed: false,
       limit,
@@ -115,6 +120,7 @@ export function checkRateLimit(
   }
 
   record.timestamps.push(now);
+
   return {
     allowed: true,
     limit,
@@ -124,8 +130,10 @@ export function checkRateLimit(
 }
 
 /**
- * Resets the rate limiter cache (primarily for test suite isolation).
+ * Reset rate limit cache (for testing only).
  */
 export function resetRateLimits(): void {
   ipCache.clear();
 }
+
+export const _resetRateLimits = resetRateLimits;

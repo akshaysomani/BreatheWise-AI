@@ -1,14 +1,15 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
 import prisma from '../src/lib/db';
 import { createDatabaseSession } from '../src/lib/session';
 
 /**
  * BreatheWise AI — End-to-End Personal Impact Tracker & Community Intelligence (M6)
  * 
- * Verifies:
+ * Verifies complete user journeys across:
  * 1. Personal Impact Tracker: deterministic calculation previews, logging modal,
  *    historical audit trail, formula inspection drawer, inline edit, delete with aggregate
- *    recalculation, and RFC 4180 CSV export download and content verification.
+ *    recalculation, RFC 4180 CSV export download and content parsing, and audit JSON export.
  * 2. Community Environmental Intelligence: privacy preservation (~1.1 km coarse fuzzing),
  *    regulatory segregation banner (`isOfficialData: false`), citizen report submission,
  *    upvoting deduplication, and moderation flagging.
@@ -59,7 +60,7 @@ test.describe('BreatheWise AI Module 6: Impact Tracker & Community Intelligence'
 
     // 4. Verify Impact Workspace header & methodology version
     await expect(page.locator('h2:has-text("Personal Impact Tracker")')).toBeVisible();
-    await expect(page.locator('text=Methodology v2024.2.0')).toBeVisible();
+    await expect(page.locator('text=Methodology v2024.2.1')).toBeVisible();
 
     // 5. Open Activity Logger Modal
     const logButton = page.locator('button:has-text("Log Activity")').first();
@@ -75,7 +76,7 @@ test.describe('BreatheWise AI Module 6: Impact Tracker & Community Intelligence'
     // 7. Verify Deterministic Live Calculation Preview
     await expect(page.locator('text=Deterministic Calculation Preview')).toBeVisible();
     await expect(page.locator('text=+2.04 kg CO2e')).toBeVisible();
-    await expect(page.locator('text=+0.21 g PM2.5')).toBeVisible();
+    await expect(page.locator('text=Not Quantified').first()).toBeVisible();
 
     // 8. Save activity to audit trail
     const saveButton = page.locator('button:has-text("Save to Audit Trail")');
@@ -93,15 +94,40 @@ test.describe('BreatheWise AI Module 6: Impact Tracker & Community Intelligence'
     await expect(page.locator('text=UK DESNZ / DEFRA 2024')).toBeVisible();
     await page.locator('button:has-text("Close")').evaluate((el: HTMLElement) => el.click());
 
-    // 10. Test CSV Export Download & Content Parsing
+    // 10. Test Activity Edit Journey & Updated Aggregate
+    const editButton = page.locator('button[title="Edit log"]').first();
+    await expect(editButton).toBeVisible();
+    await editButton.evaluate((el: HTMLElement) => el.click());
+
+    await expect(page.locator('text=Edit Environmental Log')).toBeVisible();
+    await page.fill('input#edit-title', 'Metro Commute to Connaught Place (Verified)');
+    await page.locator('button:has-text("Save Changes")').evaluate((el: HTMLElement) => el.click());
+
+    await expect(page.locator('text=Metro Commute to Connaught Place (Verified)').first()).toBeVisible({ timeout: 5_000 });
+
+    // 11. Test CSV Export Download & Content Parsing
     const [download] = await Promise.all([
       page.waitForEvent('download'),
       page.locator('button:has-text("Export CSV")').first().click(),
     ]);
     const downloadPath = await download.path();
     expect(downloadPath).toBeTruthy();
+    if (downloadPath) {
+      const csvContent = fs.readFileSync(downloadPath, 'utf-8');
+      expect(csvContent).toContain('Log ID,Date (UTC),Action Category,Activity Title');
+      expect(csvContent).toContain('Metro Commute to Connaught Place (Verified)');
+      expect(csvContent).toContain('2.04');
+    }
 
-    // 11. Test Activity Deletion with Aggregate Recalculation
+    // 12. Test JSON Export via API
+    const jsonRes = await context.request.get('/api/impact?format=json');
+    expect(jsonRes.status()).toBe(200);
+    const jsonData = await jsonRes.json();
+    expect(jsonData.success).toBe(true);
+    expect(jsonData.data.totalCount).toBeGreaterThanOrEqual(1);
+    expect(jsonData.data.aggregates.totalCO2AvoidedKg).toBe(2.04);
+
+    // 13. Test Activity Deletion with Aggregate Recalculation
     const deleteButton = page.locator('button[title="Delete log"]').first();
     await expect(deleteButton).toBeVisible();
     await deleteButton.evaluate((el: HTMLElement) => el.click());
@@ -213,7 +239,7 @@ test.describe('BreatheWise AI Module 6: Impact Tracker & Community Intelligence'
         actionType: 'COMMUTE_SHIFT',
         title: 'Secret Journey by User A',
         co2AvoidedKg: 3.5,
-        pm25AvoidedGrams: 0.12,
+        pm25AvoidedGrams: 0.0,
         calculationFormula: '20 km shifted',
         uncertaintyMargin: 0.15,
       },

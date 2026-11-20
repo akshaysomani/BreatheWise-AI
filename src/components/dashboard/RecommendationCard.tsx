@@ -19,7 +19,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { StructuredRecommendation } from '@/lib/validations/assistant.schema';
-import { calculationEngine } from '@/services/calculation-engine';
+import { calculationEngine, CALCULATION_ENGINE_VERSION } from '@/services/calculation-engine';
 
 interface RecommendationCardProps {
   recommendation: StructuredRecommendation;
@@ -426,11 +426,15 @@ export function RecommendationCard({
           {computedImpact && (
             <div className="p-3 bg-[#EEF3EA] rounded-lg border border-[#397A55]/30 space-y-1">
               <span className="text-[10px] uppercase font-bold text-[#397A55] tracking-wider block">
-                Deterministic Audit Preview (v2024.2.0)
+                Deterministic Audit Preview (v{CALCULATION_ENGINE_VERSION})
               </span>
               <div className="flex items-center gap-4 text-xs font-bold text-[#27352D]">
                 <span>+{computedImpact.co2AvoidedKg} kg CO₂e</span>
-                {computedImpact.pm25AvoidedGrams > 0 && <span>+{computedImpact.pm25AvoidedGrams} g PM2.5</span>}
+                {computedImpact.pm25AvoidedGrams > 0 ? (
+                  <span>+{computedImpact.pm25AvoidedGrams} g PM2.5</span>
+                ) : (
+                  <span className="text-[11px] font-normal text-[#68766C]">PM2.5: Not Quantified</span>
+                )}
               </div>
               <p className="text-[10px] text-[#68766C] font-mono">{computedImpact.calculationFormula}</p>
             </div>

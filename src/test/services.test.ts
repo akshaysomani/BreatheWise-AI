@@ -54,13 +54,14 @@ describe('Business Services & Calculations (M2 Phase 6)', () => {
   });
 
   describe('Impact Savings Service', () => {
-    it('calculates formulaic CO2e and PM2.5 avoidance using DEFRA constants', () => {
+    it('calculates formulaic CO2e avoidance using DEFRA constants with zero PM2.5 fabrication', () => {
       // Shift 14.2 km from SOLO_CAR (0.171 kg/km) to METRO (0.035 kg/km)
-      // Delta = 14.2 * (0.171 - 0.035) = 14.2 * 0.136 = 1.9312 kg CO2e
+      // Delta = 14.2 * (0.171 - 0.035) = 14.2 * 0.136 = 1.9312 kg CO2e -> rounded to 1.93 kg
       const savings = impactService.calculateTransitSavings(14.2, 'SOLO_CAR', 'METRO');
 
       expect(savings.co2AvoidedKg).toBe(1.93);
-      expect(savings.pm25AvoidedGrams).toBeGreaterThan(0.15);
+      expect(savings.pm25AvoidedGrams).toBe(0);
+      expect(savings.pm25Status).toBe('NOT_QUANTIFIED');
       expect(savings.calculationFormula).toContain('14.2 km * (0.171 kg/km [SOLO_CAR] - 0.035 kg/km [METRO])');
       expect(savings.uncertaintyMargin).toBe(0.15);
     });

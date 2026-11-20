@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import prisma from '@/lib/db';
 import { impactService } from '@/services/impact.service';
 import { impactRepository } from '@/repositories/impact.repository';
+import { CALCULATION_ENGINE_VERSION } from '@/services/calculation-engine';
 
 describe('BreatheWise AI — Personal Impact Tracker Service & Repository (M6)', () => {
   const testUserA = 'test-impact-user-a-' + Date.now();
@@ -209,27 +210,42 @@ describe('BreatheWise AI — Personal Impact Tracker Service & Repository (M6)',
     it('generates audit-grade JSON export with methodology metadata & standards citations', async () => {
       const json = await impactService.exportLogsAsJson(testUserA);
       expect(json.exportedAt).toBeDefined();
-      expect(json.methodologyVersion).toBe('2024.2.0');
+      expect(json.methodologyVersion).toBe(CALCULATION_ENGINE_VERSION);
       expect(json.authoritativeStandards.length).toBeGreaterThanOrEqual(3);
       expect(json.userAggregates).toBeDefined();
       expect(Array.isArray(json.logs)).toBe(true);
     });
 
-    it('neutralizes CSV formula injection characters (=, +, -, @)', async () => {
+    it('neutralizes CSV formula injection across all trigger characters and leading whitespace', async () => {
+      // 1. Standard triggers (=, +, -, @)
       await impactService.recordLog(testUserA, {
         actionType: 'COMMUTE_SHIFT',
         title: '=SUM(1+1)',
         date: new Date(),
         co2AvoidedKg: 1.0,
-        pm25AvoidedGrams: 0.1,
+        pm25AvoidedGrams: 0.0,
         calculationFormula: '+CMD|calc!A0',
+        uncertaintyMargin: 0.15,
+      });
+
+      // 2. Triggers with leading whitespace, tab, carriage return, pipes, quotes, and multiline content
+      await impactService.recordLog(testUserA, {
+        actionType: 'COMMUTE_SHIFT',
+        title: '   =DDE("cmd";"";"calc")',
+        date: new Date(),
+        co2AvoidedKg: 2.0,
+        pm25AvoidedGrams: 0.0,
+        calculationFormula: '\t@SUM(1,2)\r\n"Quoted Notes"',
         uncertaintyMargin: 0.15,
       });
 
       const csv = await impactService.exportLogsAsCsv(testUserA);
       // Prepending single quote neutralizes spreadsheet formula execution
       expect(csv).toContain('"\'=SUM(1+1)"');
-      expect(csv).toContain('"\'=SUM(1+1)"');
+      expect(csv).toContain('"\'+CMD|calc!A0"');
+      // Verify leading whitespace and tab injection is neutralized with single quote prefix
+      expect(csv).toContain('"\'   =DDE(""cmd"";"""";""calc"")"');
+      expect(csv).toContain('"\'\t@SUM(1,2)');
     });
   });
 });

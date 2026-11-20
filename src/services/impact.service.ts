@@ -89,9 +89,10 @@ export const impactService = {
     const escapeCsvField = (val: any) => {
       if (val === null || val === undefined) return '""';
       let str = String(val);
-      // Mitigate CSV Formula Injection (CWE-1236 / OWASP)
-      // Prepend single quote if field starts with formula initiation characters
-      if (/^[=+\-@\t\r]/.test(str)) {
+      // Mitigate CSV Formula Injection (CWE-1236 / OWASP CSV Injection Defense)
+      // Check if field starts with formula initiation characters (=, +, -, @, \t, \r, |, %)
+      // even if preceded by arbitrary leading whitespace
+      if (/^\s*[=+\-@\t\r|%]/.test(str)) {
         str = `'${str}`;
       }
       str = str.replace(/"/g, '""');
@@ -118,27 +119,32 @@ export const impactService = {
     const aggregates = await impactRepository.getAggregates(userId);
 
     return {
-      exportedAt: new Date().toISOString(),
+      version: calculationEngine.getMethodologyMetadata().version,
       methodologyVersion: calculationEngine.getMethodologyMetadata().version,
+      exportedAt: new Date().toISOString(),
+      standardsCitation:
+        'Calculated using UK DESNZ / DEFRA 2024 Passenger Transport Benchmark Factors, US EPA WARM v15, and India CEA Baseline Database v19.0 (±10% to ±15% explicit uncertainty margins). PM2.5 marked NOT_QUANTIFIED to prevent false precision.',
       authoritativeStandards: [
         'UK DESNZ / DEFRA 2024 Greenhouse Gas Conversion Factors',
         'India Central Electricity Authority (CEA) Baseline Database v19.0',
         'US EPA Waste Reduction Model (WARM) v15',
-        'ARAI / CPCB Automotive Emission Factors for Indian In-Use Fleet',
+        'ARAI / CPCB Vehicular Emission Benchmarks',
       ],
-      userAggregates: aggregates,
+      totalCount,
       recordCount: totalCount,
+      aggregates,
+      userAggregates: aggregates,
       logs: logs.map((l) => ({
         id: l.id,
-        date: l.date,
         actionType: l.actionType,
         title: l.title,
+        date: l.date.toISOString(),
         co2AvoidedKg: l.co2AvoidedKg,
         pm25AvoidedGrams: l.pm25AvoidedGrams,
         distanceShiftedKm: l.distanceShiftedKm,
         calculationFormula: l.calculationFormula,
         uncertaintyMargin: l.uncertaintyMargin,
-        createdAt: l.createdAt,
+        createdAt: l.createdAt.toISOString(),
       })),
     };
   },

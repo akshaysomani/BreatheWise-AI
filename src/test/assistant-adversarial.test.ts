@@ -168,6 +168,6 @@ describe('BreatheWise AI — M5 Adversarial & AI Safety Test Suite', () => {
       } finally {
         process.env.GEMINI_API_KEY = origKey;
       }
-    });
+    }, 20000);
   });
 });

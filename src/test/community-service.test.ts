@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import prisma from '@/lib/db';
 import { communityService } from '@/services/community.service';
 import { communityRepository } from '@/repositories/community.repository';
+import { checkRateLimit } from '@/lib/rate-limiter';
 
 describe('BreatheWise AI — Community Environmental Intelligence (M6)', () => {
   const testCitizenA = 'test-citizen-a-' + Date.now();
@@ -214,6 +215,19 @@ describe('BreatheWise AI — Community Environmental Intelligence (M6)', () => {
 
       const check = await communityRepository.getById(report.id);
       expect(check).not.toBeNull();
+    });
+  });
+
+  describe('7. Upvote Deduplication & Rate Limiting Guard', () => {
+    it('prevents immediate duplicate upvotes within the deduplication window', () => {
+      const voterKey = 'test_voter_dedup_' + Date.now();
+      const reportId = 'test_report_dedup_' + Date.now();
+      const firstCheck = checkRateLimit(`upvote_dedup_${voterKey}_${reportId}`, 1, 86_400_000);
+      expect(firstCheck.allowed).toBe(true);
+
+      const duplicateCheck = checkRateLimit(`upvote_dedup_${voterKey}_${reportId}`, 1, 86_400_000);
+      expect(duplicateCheck.allowed).toBe(false);
+      expect(duplicateCheck.remaining).toBe(0);
     });
   });
 });
