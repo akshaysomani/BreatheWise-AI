@@ -423,13 +423,13 @@ export function AirQualityRadar({
                     )}
                   </div>
                   <span className="text-[11px] text-[#68766C] font-medium">
-                    Completeness: <strong>{officialCpcb?.completenessHours ? Math.round(officialCpcb.completenessHours) : 1}/24 hrs</strong> (min. 16 hrs required)
+                    Completeness: <strong>{officialCpcb?.completenessHours ? Math.round(officialCpcb.completenessHours) : 1}/24 hrs</strong> valid data (min. 16 hrs required)
                   </span>
                 </div>
                 <p className="text-[11px] text-[#556359] leading-snug">
                   {officialCpcb?.status === 'AVAILABLE'
-                    ? 'Certified 24-hour CPCB regulatory average complying with MoEFCC 16-hour continuous data completeness protocol.'
-                    : 'Official CPCB 24-hour regulatory AQI mandates a rolling average with at least 16 hours continuous data completeness. The primary gauge displays the Acute 1-Hour Proxy for real-time exposure advisory.'}
+                    ? 'Certified 24-hour CPCB regulatory average complying with MoEFCC 16-hour valid data completeness protocol (non-continuous data accepted).'
+                    : 'Official CPCB 24-hour regulatory AQI mandates at least 16 hours of valid data per 24-hour monitoring cycle (non-continuous observations accepted). Currently serving acute 1-hour sensor proxy.'}
                 </p>
               </div>
 

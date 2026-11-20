@@ -200,14 +200,14 @@ export const airQualityService = {
 
         const hourlySamples: HourlySampleInput[] = [];
         for (const row of rollingHistory) {
-          if (row.pm25 !== null) hourlySamples.push({ pollutant: 'PM2.5', value: row.pm25, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
-          if (row.pm10 !== null) hourlySamples.push({ pollutant: 'PM10', value: row.pm10, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
-          if (row.no2 !== null) hourlySamples.push({ pollutant: 'NO2', value: row.no2, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
-          if (row.so2 !== null) hourlySamples.push({ pollutant: 'SO2', value: row.so2, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
-          if (row.co !== null) hourlySamples.push({ pollutant: 'CO', value: row.co, unit: 'mg/m³', measurementTimestamp: row.measurementTimestamp });
-          if (row.o3 !== null) hourlySamples.push({ pollutant: 'O3', value: row.o3, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
-          if (row.nh3 !== null) hourlySamples.push({ pollutant: 'NH3', value: row.nh3, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
-          if (row.pb !== null) hourlySamples.push({ pollutant: 'Pb', value: row.pb, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
+          if (row.pm25 !== null) hourlySamples.push({ pollutant: 'PM2.5', value: row.pm25, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp, stationId: row.stationId || station.id });
+          if (row.pm10 !== null) hourlySamples.push({ pollutant: 'PM10', value: row.pm10, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp, stationId: row.stationId || station.id });
+          if (row.no2 !== null) hourlySamples.push({ pollutant: 'NO2', value: row.no2, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp, stationId: row.stationId || station.id });
+          if (row.so2 !== null) hourlySamples.push({ pollutant: 'SO2', value: row.so2, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp, stationId: row.stationId || station.id });
+          if (row.co !== null) hourlySamples.push({ pollutant: 'CO', value: row.co, unit: 'mg/m³', measurementTimestamp: row.measurementTimestamp, stationId: row.stationId || station.id });
+          if (row.o3 !== null) hourlySamples.push({ pollutant: 'O3', value: row.o3, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp, stationId: row.stationId || station.id });
+          if (row.nh3 !== null) hourlySamples.push({ pollutant: 'NH3', value: row.nh3, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp, stationId: row.stationId || station.id });
+          if (row.pb !== null) hourlySamples.push({ pollutant: 'Pb', value: row.pb, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp, stationId: row.stationId || station.id });
         }
         for (const inp of inputs) {
           hourlySamples.push({
@@ -215,9 +215,10 @@ export const airQualityService = {
             value: inp.value,
             unit: inp.unit,
             measurementTimestamp: inp.measurementTimestampUtc || observationDate,
+            stationId: station.id,
           });
         }
-        officialCpcbAqi = calculateOfficialCpcbAqi(hourlySamples, observationDate);
+        officialCpcbAqi = calculateOfficialCpcbAqi(hourlySamples, observationDate, station.id);
       } catch {
         officialCpcbAqi = calculateCpcbAqi(inputs).officialCpcbAqi;
       }
@@ -376,6 +377,10 @@ export const airQualityService = {
       dominantSubIndex: isRegulatoryCompliant ? snapshot.aqiValue : null,
       completenessHours: snapshot.completenessHours ?? 1.0,
       minRequiredHours: 16.0,
+      completenessThresholdHours: 16.0,
+      validPollutantCount: isRegulatoryCompliant ? 3 : 0,
+      hasParticulate: isRegulatoryCompliant,
+      isOverallAqiEligible: isRegulatoryCompliant,
       isRegulatoryCompliant,
       averagingPeriod: '24_HOUR',
       subIndices: shortTermIndicator.subIndices,
@@ -385,7 +390,7 @@ export const airQualityService = {
       methodology: 'CPCB_NAQI_INDIA_2014',
       reason: isRegulatoryCompliant
         ? 'Official 24-hour CPCB regulatory average with validated completeness.'
-        : `Snapshot observation represents ${snapshot.completenessHours ?? 1} hour(s) of continuous data. Official CPCB regulatory AQI mandates at least 16 hours continuous data completeness.`,
+        : `Snapshot observation represents ${snapshot.completenessHours ?? 1} hour(s) of valid data. Official CPCB regulatory AQI mandates at least 16 hours of valid data in the 24-hour monitoring cycle (non-continuous data accepted).`,
     };
 
     return {

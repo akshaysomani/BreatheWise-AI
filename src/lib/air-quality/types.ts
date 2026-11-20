@@ -97,9 +97,32 @@ export interface CpcbDataSufficiency {
 }
 
 /**
- * Official CPCB Indian National AQI (Regulatory 24-Hour Average)
- * Requires 24-hour averages for PM2.5, PM10, NO2, SO2, NH3, Pb with >=16 hours data completeness,
- * and 8-hour averages for CO and O3 with >=6 hours data completeness.
+ * Detailed per-pollutant completeness and data coverage audit.
+ * Unambiguously distinguishes averaging window, observation count, temporal data coverage,
+ * and eligibility under official CPCB methodology.
+ */
+export interface PollutantCompletenessAudit {
+  pollutant: PollutantCode;
+  averagingPeriodHours: 24 | 8;        // 24 for PM2.5, PM10, NO2, SO2, NH3, Pb; 8 for CO, O3
+  observationWindowHours: 24;         // Standard 24-hour monitoring cycle
+  validObservationCount: number;      // Total count of valid observation data points received
+  validObservationHours: number;      // Number of distinct hourly bins with valid data (temporal coverage)
+  dataCoverageHours: number;          // Alias for validObservationHours
+  completenessThresholdHours: 16;     // CPCB minimum threshold: at least 16 hours data required
+  isSubIndexEligible: boolean;        // True iff validObservationHours >= 16 (non-continuous data accepted)
+  concentration: number | null;       // Averaged concentration (24-hr mean, or 8-hr running mean for CO/O3)
+  unit: string;                       // Standardized unit (mg/m³ for CO, µg/m³ for others)
+  subIndex: number | null;            // Piecewise linear sub-index or null if not eligible
+  rejectionReason?: string;           // Precise reason if ineligible
+}
+
+/**
+ * Official CPCB Indian National AQI (Regulatory Standard)
+ * Based strictly on authoritative Central Pollution Control Board (CPCB) methodology:
+ * - 24-hour averaging for PM2.5, PM10, NO2, SO2, NH3, Pb
+ * - 8-hour running averaging for CO and O3
+ * - Minimum 16 hours of valid data required in the 24-hour cycle for sub-index eligibility (continuity not required)
+ * - Minimum 3 eligible criteria pollutants including at least one particulate (PM2.5 or PM10)
  */
 export interface OfficialCpcbAqiResult {
   status: 'AVAILABLE' | 'INSUFFICIENT_COMPLETENESS' | 'INSUFFICIENT_POLLUTANTS' | 'UNAVAILABLE';
@@ -107,11 +130,16 @@ export interface OfficialCpcbAqiResult {
   category: CpcbCategory | 'UNAVAILABLE';
   dominantPollutant: PollutantCode | null;
   dominantSubIndex: number | null;
-  completenessHours: number; // Maximum sample hours available across monitored criteria pollutants
-  minRequiredHours: number;  // 16.0 hours per CPCB / MoEFCC protocol
+  completenessHours: number; // Maximum valid observation hours across monitored criteria pollutants
+  minRequiredHours: number;  // 16.0 hours per CPCB protocol
+  completenessThresholdHours: number; // 16.0 hours
+  validPollutantCount?: number;
+  hasParticulate?: boolean;
+  isOverallAqiEligible?: boolean;
   isRegulatoryCompliant: boolean; // True ONLY if >= 16h completeness AND >= 3 parameters (including PM)
   averagingPeriod: '24_HOUR';
   subIndices: Record<PollutantCode, number | null>;
+  pollutantAudits?: Partial<Record<PollutantCode, PollutantCompletenessAudit>>;
   healthGuidance: CpcbHealthGuidance;
   methodology: 'CPCB_NAQI_INDIA_2014';
   reason: string;

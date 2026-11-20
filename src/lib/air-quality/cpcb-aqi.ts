@@ -12,8 +12,8 @@
  * 4. CPCB Data Sufficiency Rule: At least 3 parameters must be monitored, of which
  *    at least one MUST be PM2.5 or PM10. If not satisfied, overall AQI is null.
  * 5. Averaging Period & Data Completeness Separation:
- *    - Official CPCB AQI: 24-hour rolling averages (minimum 16 hours data completeness for
- *      particulates, NO2, SO2, NH3, Pb; 8-hour rolling average with minimum 6 hours for CO and O3).
+ *    - Official CPCB AQI: 24-hour averages (minimum 16 hours valid data completeness in the 24-hour cycle
+ *      for particulates, NO2, SO2, NH3, Pb; 8-hour running average for CO and O3 with minimum 16 hours in 24-hr cycle).
  *    - Short-Term Air Quality Indicator: 1-hour acute sensor observations evaluated against
  *      CPCB breakpoints as an instantaneous real-time proxy for immediate exposure mitigation.
  * 6. Overall AQI = max(subIndices of monitored pollutants).
@@ -30,7 +30,9 @@ import {
   AveragingPeriod,
   OfficialCpcbAqiResult,
   ShortTermAirQualityIndicator,
+  PollutantCompletenessAudit,
 } from './types';
+import { PHYSICAL_CONCENTRATION_LIMITS } from './measurement-validator';
 
 export interface CpcbBreakpoint {
   bpl: number;      // Breakpoint Low concentration
@@ -208,7 +210,7 @@ export const CPCB_HEALTH_STATEMENTS: Record<CpcbCategory | 'INSUFFICIENT_DATA' |
   },
   UNAVAILABLE: {
     shortStatement: 'Official 24-hour CPCB regulatory average unavailable',
-    description: 'Official CPCB regulatory AQI mandates a rolling 24-hour average with at least 16 hours data completeness per MoEFCC protocol.',
+    description: 'Official CPCB regulatory AQI mandates a 24-hour monitoring cycle with at least 16 hours of valid data (non-continuous data accepted) per MoEFCC protocol.',
     colorHex: '#68766C',
     colorClass: 'text-[#48534C] bg-[#F0F2EF] border-[#68766C]/30',
     generalPublicAdvice: 'Refer to the short-term 1-hour acute indicator for immediate exposure guidance.',
@@ -397,20 +399,30 @@ export interface HourlySampleInput {
   value: number;
   unit: string;
   measurementTimestamp: Date | string;
+  stationId?: string;
 }
 
 /**
  * Calculates Official CPCB National Air Quality Index (Regulatory 24-Hour Average)
  * 
  * Strict Scientific Rules per CPCB / MoEFCC 2014-2015 Protocol:
- * 1. Requires 24-hour rolling averages for PM2.5, PM10, NO2, SO2, NH3, Pb with >= 16 hours data completeness.
- * 2. Requires 8-hour rolling averages for CO and O3 with >= 6 hours data completeness.
- * 3. At least 3 pollutants with sufficient completeness must be present, including PM2.5 or PM10.
- * 4. If completeness is < 16 hours, official AQI is explicitly UNAVAILABLE (null).
+ * 1. Requires minimum 16 hours of valid data in the 24-hour monitoring cycle for sub-index eligibility.
+ *    (Continuity is NOT required: non-continuous hourly samples with >= 16 distinct valid hours satisfy criteria).
+ * 2. 24-hour arithmetic average for PM2.5, PM10, NO2, SO2, NH3, Pb.
+ * 3. 8-hour running average for CO and O3 across readings within the active 8-hour window [asOfTime - 8h, asOfTime],
+ *    provided the station meets the official 16-hour completeness rule in the 24-hour cycle.
+ * 4. Sample deduplication: multiple readings within the same hourly bucket are averaged into 1 hourly bin
+ *    and count as exactly 1 valid observation hour.
+ * 5. Station isolation: if targetStationId is specified, samples with a differing stationId are rejected.
+ * 6. Plausibility & future time defense: negative readings, values exceeding physical plausibility ceilings,
+ *    and future timestamps (> 5 min clock drift) are strictly rejected.
+ * 7. CPCB Sufficiency: At least 3 parameters meeting completeness must be present, including PM2.5 or PM10.
+ * 8. If completeness is < 16 hours or sufficiency is not met, official AQI is explicitly UNAVAILABLE (null).
  */
 export function calculateOfficialCpcbAqi(
   hourlySamples: HourlySampleInput[],
-  asOfTime = new Date()
+  asOfTime = new Date(),
+  targetStationId?: string
 ): OfficialCpcbAqiResult {
   const emptySubIndices: Record<PollutantCode, number | null> = {
     'PM2.5': null,
@@ -426,9 +438,18 @@ export function calculateOfficialCpcbAqi(
   const asOfMs = asOfTime.getTime();
   const window24hMs = 24 * 60 * 60 * 1000;
   const window8hMs = 8 * 60 * 60 * 1000;
+  const maxFutureDriftMs = 5 * 60 * 1000; // 5 min future clock skew tolerance
 
-  // Group samples by pollutant and hourly bins
-  const samplesByPollutant: Record<PollutantCode, Map<number, number>> = {
+  // Sort samples chronologically
+  const sortedSamples = [...hourlySamples].sort((a, b) => {
+    const tA = new Date(a.measurementTimestamp).getTime();
+    const tB = new Date(b.measurementTimestamp).getTime();
+    return tA - tB;
+  });
+
+  // Group valid samples by pollutant into hourly bins:
+  // hourKey -> array of normalized concentration values in that hour
+  const hourlyBins: Record<PollutantCode, Map<number, number[]>> = {
     'PM2.5': new Map(),
     'PM10': new Map(),
     'NO2': new Map(),
@@ -439,64 +460,175 @@ export function calculateOfficialCpcbAqi(
     'Pb': new Map(),
   };
 
-  const unitsByPollutant: Partial<Record<PollutantCode, string>> = {};
+  const rawObservationCounts: Record<PollutantCode, number> = {
+    'PM2.5': 0,
+    'PM10': 0,
+    'NO2': 0,
+    'SO2': 0,
+    'CO': 0,
+    'O3': 0,
+    'NH3': 0,
+    'Pb': 0,
+  };
 
-  for (const s of hourlySamples) {
-    if (s.value === null || s.value === undefined || isNaN(s.value) || s.value < 0) continue;
-    const tMs = new Date(s.measurementTimestamp).getTime();
-    if (tMs > asOfMs) continue; // Ignore future measurements
-
-    // Hour bucket key (floor to hour)
-    const hourKey = Math.floor(tMs / (60 * 60 * 1000));
-    const is8HourPollutant = s.pollutant === 'CO' || s.pollutant === 'O3';
-    const cutoff = is8HourPollutant ? asOfMs - window8hMs : asOfMs - window24hMs;
-
-    if (tMs >= cutoff) {
-      samplesByPollutant[s.pollutant].set(hourKey, s.value);
-      unitsByPollutant[s.pollutant] = s.unit;
+  for (const s of sortedSamples) {
+    // 1. Station isolation check
+    if (targetStationId && s.stationId && s.stationId !== targetStationId) {
+      continue;
     }
+
+    // 2. Numeric & non-negative check
+    if (s.value === null || s.value === undefined || isNaN(s.value) || !isFinite(s.value) || s.value < 0) {
+      continue;
+    }
+
+    // 3. Timestamp sanity: reject future timestamps exceeding 5-min tolerance
+    const tMs = new Date(s.measurementTimestamp).getTime();
+    if (isNaN(tMs) || tMs > asOfMs + maxFutureDriftMs) {
+      continue;
+    }
+
+    // 4. Must fall within the 24-hour observation window [asOfMs - 24h, asOfMs]
+    if (tMs < asOfMs - window24hMs || tMs > asOfMs) {
+      continue;
+    }
+
+    // 5. Physical concentration ceiling check
+    const physicalLimit = PHYSICAL_CONCENTRATION_LIMITS[s.pollutant];
+    if (physicalLimit) {
+      let checkVal = s.value;
+      const unitLower = (s.unit || '').toLowerCase();
+      if (s.pollutant !== 'CO' && (unitLower.includes('mg/m') || unitLower.includes('mg/m3'))) {
+        checkVal = s.value * 1000;
+      }
+      if (s.pollutant === 'CO' && (unitLower.includes('µg/m') || unitLower.includes('ug/m3'))) {
+        checkVal = s.value / 1000;
+      }
+      if (checkVal > physicalLimit.max) {
+        continue; // Exceeds physical ceiling, reject corrupt outlier
+      }
+    }
+
+    // Normalize value
+    const { normalizedValue } = normalizeConcentration(s.pollutant, s.value, s.unit);
+
+    rawObservationCounts[s.pollutant] = (rawObservationCounts[s.pollutant] || 0) + 1;
+
+    // Hourly bin bucket (floor timestamp to hour)
+    const hourKey = Math.floor(tMs / (60 * 60 * 1000));
+    if (!hourlyBins[s.pollutant].has(hourKey)) {
+      hourlyBins[s.pollutant].set(hourKey, []);
+    }
+    hourlyBins[s.pollutant].get(hourKey)!.push(normalizedValue);
   }
 
-  // Calculate 24-hr / 8-hr arithmetic means for pollutants meeting completeness
+  // Calculate per-pollutant hourly averages and completeness audit
+  const pollutantAudits: Partial<Record<PollutantCode, PollutantCompletenessAudit>> = {};
   const validPollutants: PollutantCode[] = [];
   const subIndices = { ...emptySubIndices };
   let maxCompletenessHours = 0;
 
-  for (const code of Object.keys(samplesByPollutant) as PollutantCode[]) {
-    const hourSamples = samplesByPollutant[code];
-    const sampleCount = hourSamples.size;
-    if (sampleCount > maxCompletenessHours) {
-      maxCompletenessHours = sampleCount;
+  const allCodes: PollutantCode[] = ['PM2.5', 'PM10', 'NO2', 'SO2', 'CO', 'O3', 'NH3', 'Pb'];
+
+  for (const code of allCodes) {
+    const hourMap = hourlyBins[code];
+    const validObservationHours = hourMap.size;
+    const validObservationCount = rawObservationCounts[code];
+
+    if (validObservationHours > maxCompletenessHours) {
+      maxCompletenessHours = validObservationHours;
     }
 
-    const is8Hour = code === 'CO' || code === 'O3';
-    const minHours = is8Hour ? 6 : 16; // 75% completeness requirement
+    // If no samples were received for this pollutant, skip creating an audit
+    if (validObservationCount === 0) {
+      continue;
+    }
 
-    if (sampleCount >= minHours) {
-      let sum = 0;
-      for (const val of hourSamples.values()) {
-        sum += val;
+    const is8HourPollutant = code === 'CO' || code === 'O3';
+    const averagingPeriodHours: 24 | 8 = is8HourPollutant ? 8 : 24;
+
+    // CPCB Standard: Minimum 16 hours of data in the 24-hour cycle required for sub-index calculation
+    const isSubIndexEligible = validObservationHours >= 16;
+    let finalConcentration: number | null = null;
+    let subIndex: number | null = null;
+    let rejectionReason: string | undefined = undefined;
+
+    if (!isSubIndexEligible) {
+      rejectionReason = `Insufficient valid observation hours (${validObservationHours}/24 hrs). CPCB protocol requires at least 16 valid observation hours in the 24-hour cycle.`;
+    } else {
+      if (is8HourPollutant) {
+        // 8-hour running average: average of hourly bins within the active 8-hour window [asOfHourKey - 7, asOfHourKey]
+        const asOfHourKey = Math.floor(asOfMs / (60 * 60 * 1000));
+        const min8hHourKey = asOfHourKey - 7;
+        
+        let sum8h = 0;
+        let count8h = 0;
+
+        for (const [hKey, valuesInHour] of hourMap.entries()) {
+          if (hKey >= min8hHourKey && hKey <= asOfHourKey) {
+            const hourAvg = valuesInHour.reduce((a, b) => a + b, 0) / valuesInHour.length;
+            sum8h += hourAvg;
+            count8h += 1;
+          }
+        }
+
+        if (count8h > 0) {
+          finalConcentration = sum8h / count8h;
+        } else {
+          // If no samples in the immediate 8h window, fallback to all available hours in the cycle
+          let sumAll = 0;
+          for (const valuesInHour of hourMap.values()) {
+            sumAll += valuesInHour.reduce((a, b) => a + b, 0) / valuesInHour.length;
+          }
+          finalConcentration = sumAll / validObservationHours;
+        }
+      } else {
+        // 24-hour arithmetic average across distinct hourly bin means
+        let sum24h = 0;
+        for (const valuesInHour of hourMap.values()) {
+          const hourAvg = valuesInHour.reduce((a, b) => a + b, 0) / valuesInHour.length;
+          sum24h += hourAvg;
+        }
+        finalConcentration = sum24h / validObservationHours;
       }
-      const mean = sum / sampleCount;
-      const unit = unitsByPollutant[code] || (code === 'CO' ? 'mg/m³' : 'µg/m³');
 
-      const { normalizedValue } = normalizeConcentration(code, mean, unit);
-      const { subIndex } = calculateCpcbSubIndex(code, normalizedValue);
-
-      if (subIndex !== null) {
-        subIndices[code] = subIndex;
-        validPollutants.push(code);
+      if (finalConcentration !== null) {
+        finalConcentration = Math.round(finalConcentration * 100) / 100;
+        const res = calculateCpcbSubIndex(code, finalConcentration);
+        subIndex = res.subIndex;
       }
     }
+
+    if (isSubIndexEligible && subIndex !== null) {
+      subIndices[code] = subIndex;
+      validPollutants.push(code);
+    }
+
+    pollutantAudits[code] = {
+      pollutant: code,
+      averagingPeriodHours,
+      observationWindowHours: 24,
+      validObservationCount,
+      validObservationHours,
+      dataCoverageHours: validObservationHours,
+      completenessThresholdHours: 16,
+      isSubIndexEligible,
+      concentration: finalConcentration,
+      unit: code === 'CO' ? 'mg/m³' : 'µg/m³',
+      subIndex,
+      rejectionReason,
+    };
   }
 
   // Check CPCB data sufficiency rule (>= 3 parameters including PM2.5 or PM10)
   const sufficiency = checkCpcbDataSufficiency(validPollutants);
+  const hasParticulate = sufficiency.hasParticulate;
+  const isOverallAqiEligible = sufficiency.isSufficient;
 
-  if (!sufficiency.isSufficient) {
+  if (!isOverallAqiEligible) {
     const reason = maxCompletenessHours < 16
-      ? `Insufficient continuous monitoring completeness (${maxCompletenessHours}/24 hours). Official CPCB regulatory AQI mandates at least 16 hours of continuous data completeness per MoEFCC protocol.`
-      : `Insufficient parameters with 24-hour completeness (${validPollutants.length} valid). CPCB requires at least 3 parameters with mandatory PM2.5 or PM10.`;
+      ? `Insufficient valid observation data (${maxCompletenessHours}/24 hours). Official CPCB regulatory AQI mandates at least 16 hours of valid data in the 24-hour monitoring cycle (non-continuous data accepted).`
+      : `Insufficient parameters with 16-hour valid data completeness (${validPollutants.length} valid). CPCB requires at least 3 parameters with mandatory PM2.5 or PM10.`;
 
     return {
       status: maxCompletenessHours < 16 ? 'INSUFFICIENT_COMPLETENESS' : 'INSUFFICIENT_POLLUTANTS',
@@ -506,9 +638,14 @@ export function calculateOfficialCpcbAqi(
       dominantSubIndex: null,
       completenessHours: maxCompletenessHours,
       minRequiredHours: 16,
+      completenessThresholdHours: 16,
+      validPollutantCount: validPollutants.length,
+      hasParticulate,
+      isOverallAqiEligible: false,
       isRegulatoryCompliant: false,
       averagingPeriod: '24_HOUR',
       subIndices,
+      pollutantAudits,
       healthGuidance: CPCB_HEALTH_STATEMENTS.UNAVAILABLE,
       methodology: 'CPCB_NAQI_INDIA_2014',
       reason,
@@ -540,12 +677,17 @@ export function calculateOfficialCpcbAqi(
     dominantSubIndex: maxSubIndex >= 0 ? maxSubIndex : null,
     completenessHours: maxCompletenessHours,
     minRequiredHours: 16,
+    completenessThresholdHours: 16,
+    validPollutantCount: validPollutants.length,
+    hasParticulate,
+    isOverallAqiEligible: true,
     isRegulatoryCompliant: true,
     averagingPeriod: '24_HOUR',
     subIndices,
+    pollutantAudits,
     healthGuidance,
     methodology: 'CPCB_NAQI_INDIA_2014',
-    reason: 'Satisfies official CPCB 24-hour regulatory data completeness and parameter sufficiency standards.',
+    reason: 'Satisfies official CPCB 24-hour regulatory data completeness (>= 16 valid observation hours) and parameter sufficiency standards.',
   };
 }
 
@@ -699,12 +841,16 @@ export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
     dominantSubIndex: null,
     completenessHours: 1.0,
     minRequiredHours: 16.0,
+    completenessThresholdHours: 16.0,
+    validPollutantCount: 0,
+    hasParticulate: false,
+    isOverallAqiEligible: false,
     isRegulatoryCompliant: false,
     averagingPeriod: '24_HOUR',
     subIndices: shortTermIndicator.subIndices,
     healthGuidance: CPCB_HEALTH_STATEMENTS.UNAVAILABLE,
     methodology: 'CPCB_NAQI_INDIA_2014',
-    reason: 'Single hourly sensor observation does not meet the minimum 16-hour continuous data completeness required for official CPCB 24-hour regulatory AQI.',
+    reason: 'Single hourly sensor observation does not meet the minimum 16 hours of valid data required for official CPCB 24-hour regulatory AQI (non-continuous data accepted).',
   };
 
   // Construct backward-compatible aqiResult
