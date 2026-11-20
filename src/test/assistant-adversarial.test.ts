@@ -139,29 +139,35 @@ describe('BreatheWise AI — M5 Adversarial & AI Safety Test Suite', () => {
     });
 
     it('enforces rate limiting: blocks more than 20 queries within a single minute (HTTP 429)', async () => {
-      const authHeader = await createTestAuthHeader(user.id);
+      const origKey = process.env.GEMINI_API_KEY;
+      delete process.env.GEMINI_API_KEY; // Fast deterministic response during rate limit testing
+      try {
+        const authHeader = await createTestAuthHeader(user.id);
 
-      // Fire 20 requests (allowed)
-      for (let i = 0; i < 20; i++) {
-        const req = new NextRequest('http://localhost:3000/api/assistant/chat', {
+        // Fire 20 requests (allowed)
+        for (let i = 0; i < 20; i++) {
+          const req = new NextRequest('http://localhost:3000/api/assistant/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', authorization: authHeader },
+            body: JSON.stringify({ message: `Query number ${i}` }),
+          });
+          const res = await postChat(req);
+          expect(res.status).toBe(200);
+        }
+
+        // 21st request must be rate limited!
+        const blockedReq = new NextRequest('http://localhost:3000/api/assistant/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', authorization: authHeader },
-          body: JSON.stringify({ message: `Query number ${i}` }),
+          body: JSON.stringify({ message: 'Abusive query 21' }),
         });
-        const res = await postChat(req);
-        expect(res.status).toBe(200);
+        const blockedRes = await postChat(blockedReq);
+        expect(blockedRes.status).toBe(429);
+        const json = await blockedRes.json();
+        expect(json.error.code).toBe('RATE_LIMIT_EXCEEDED');
+      } finally {
+        process.env.GEMINI_API_KEY = origKey;
       }
-
-      // 21st request must be rate limited!
-      const blockedReq = new NextRequest('http://localhost:3000/api/assistant/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authorization: authHeader },
-        body: JSON.stringify({ message: 'Abusive query 21' }),
-      });
-      const blockedRes = await postChat(blockedReq);
-      expect(blockedRes.status).toBe(429);
-      const json = await blockedRes.json();
-      expect(json.error.code).toBe('RATE_LIMIT_EXCEEDED');
     });
   });
 });

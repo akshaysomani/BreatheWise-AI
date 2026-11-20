@@ -10,6 +10,8 @@ export interface EnvironmentalContext {
   category: string;
   status: 'AVAILABLE' | 'INSUFFICIENT_COMPLETENESS' | 'INSUFFICIENT_POLLUTANTS' | 'OUT_OF_BOUNDS' | 'NO_DATA';
   provenance: ProvenanceType | TelemetryProvenanceStatus | string;
+  provenanceType?: ProvenanceType | 'HISTORICAL_UNKNOWN';
+  sourceProvider?: string | null;
   isLive: boolean;
   stationName: string | null;
   dominantPollutant: string | null;
@@ -23,6 +25,8 @@ export interface EnvironmentalContext {
     }
   >;
   observationTimeUtc: string | null;
+  retrievalTimeUtc?: string | null;
+  cacheTimeUtc?: string | null;
   freshnessState: 'FRESH' | 'CACHED' | 'STALE' | 'MISSING';
   averagingNotice: string;
 }

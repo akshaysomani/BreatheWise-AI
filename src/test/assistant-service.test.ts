@@ -11,7 +11,7 @@ import { createTestAuthHeader } from '@/lib/auth-guard';
 import { resetRateLimits } from '@/lib/rate-limiter';
 import { buildAssistantContext, formatEnvironmentXml, formatUserContextXml } from '@/lib/ai/context-builder';
 import { deterministicFallbackEngine } from '@/lib/ai/deterministic-fallback';
-import { generateAssistantResponse } from '@/lib/ai/gemini-client';
+import { generateAssistantResponse, DEFAULT_GEMINI_MODEL } from '@/lib/ai/gemini-client';
 import { structuredRecommendationSchema, assistantChatResponseSchema } from '@/lib/validations/assistant.schema';
 import { airQualityRepository } from '@/repositories/air-quality.repository';
 import { recommendationRepository } from '@/repositories/recommendation.repository';
@@ -131,6 +131,189 @@ describe('BreatheWise AI — Module 5 Assistant & Recommendations Suite', () => 
       expect(context.environment.aqi).toBe(245);
       expect(context.environment.freshnessState).toBe('STALE');
       expect(context.environment.isLive).toBe(false);
+      expect(context.environment.provenance).toBe('STALE');
+      expect(context.environment.provenanceType).toBe('HISTORICAL_IMPORTED');
+      expect(context.environment.sourceProvider).toBe('CPCB');
+    });
+
+    it('enforces SQLite snapshot invariant: reading database records is NEVER classified as live', async () => {
+      // Create fresh snapshot (10 mins old)
+      const freshDate = new Date(Date.now() - 10 * 60 * 1000);
+      await prisma.airQualitySnapshot.create({
+        data: {
+          latitude: 28.535,
+          longitude: 77.391,
+          stationId: 'TEST_NOIDA_FRESH_STATION',
+          stationName: 'Noida Sector 62',
+          sourceProvider: 'CPCB',
+          aqiValue: 180,
+          aqiCategory: 'MODERATE',
+          dominantPollutant: 'PM2.5',
+          pm25: 75,
+          measurementTimestamp: freshDate,
+          provenanceType: 'VERIFIED_EXTERNAL_OBSERVATION',
+          completenessHours: 24,
+        },
+      });
+
+      const context = await buildAssistantContext(userA.id, { lat: 28.535, lon: 77.391 });
+
+      // Core invariant: SQLite record is NEVER a live external observation
+      expect(context.environment.isLive).toBe(false);
+      expect(context.environment.provenance).toBe('CACHED');
+      expect(context.environment.provenanceType).toBe('VERIFIED_EXTERNAL_OBSERVATION');
+      expect(context.environment.sourceProvider).toBe('CPCB');
+      expect(context.environment.freshnessState).toBe('FRESH');
+      expect(context.environment.observationTimeUtc).toBe(freshDate.toISOString());
+      expect(context.environment.retrievalTimeUtc).toBeTruthy();
+      expect(context.environment.cacheTimeUtc).toBeTruthy();
+      expect(context.environment.averagingNotice).toContain('Cached database snapshot; not a live external measurement');
+    });
+
+    it('fails closed to UNKNOWN_PROVENANCE and NO_DATA when provider cannot be identified', async () => {
+      const freshDate = new Date(Date.now() - 15 * 60 * 1000);
+      await prisma.airQualitySnapshot.create({
+        data: {
+          latitude: 12.971,
+          longitude: 77.594,
+          stationId: 'TEST_BLR_UNKNOWN_PROVIDER',
+          stationName: 'Unknown Source Station',
+          sourceProvider: 'UNKNOWN', // Invalid/unverified provider
+          aqiValue: 88,
+          aqiCategory: 'SATISFACTORY',
+          dominantPollutant: 'PM2.5',
+          measurementTimestamp: freshDate,
+          provenanceType: 'UNKNOWN_PROVENANCE',
+          completenessHours: 24,
+        },
+      });
+
+      const context = await buildAssistantContext(userA.id, { lat: 12.971, lon: 77.594 });
+
+      // Fail-closed guarantee
+      expect(context.environment.status).toBe('NO_DATA');
+      expect(context.environment.aqi).toBeNull();
+      expect(context.environment.provenance).toBe('UNKNOWN_PROVENANCE');
+      expect(context.environment.provenanceType).toBe('UNKNOWN_PROVENANCE');
+      expect(context.environment.sourceProvider).toBeNull();
+      expect(context.environment.isLive).toBe(false);
+      expect(context.environment.averagingNotice).toContain('unverified provenance');
+    });
+
+    it('fails closed to UNKNOWN_PROVENANCE when measurementTimestamp has invalid future clock skew', async () => {
+      // Measurement timestamp 10 minutes in the future (> 5 min future clock skew tolerance)
+      const futureDate = new Date(Date.now() + 10 * 60 * 1000);
+      await prisma.airQualitySnapshot.create({
+        data: {
+          latitude: 13.082,
+          longitude: 80.270,
+          stationId: 'TEST_FUTURE_CLOCK_STATION',
+          stationName: 'Future Clock Station',
+          sourceProvider: 'CPCB',
+          aqiValue: 120,
+          aqiCategory: 'MODERATE',
+          dominantPollutant: 'PM2.5',
+          measurementTimestamp: futureDate,
+          provenanceType: 'VERIFIED_EXTERNAL_OBSERVATION',
+          completenessHours: 24,
+        },
+      });
+
+      const context = await buildAssistantContext(userA.id, { lat: 13.082, lon: 80.270 });
+
+      // Clock skew violation -> fail closed
+      expect(context.environment.status).toBe('NO_DATA');
+      expect(context.environment.aqi).toBeNull();
+      expect(context.environment.provenance).toBe('UNKNOWN_PROVENANCE');
+      expect(context.environment.isLive).toBe(false);
+      expect(context.environment.observationTimeUtc).toBeNull();
+    });
+
+    it('distinguishes FRESH (<2h), CACHED (2-4h), and STALE (>4h) boundary conditions', async () => {
+      // 2.5 hours old -> CACHED
+      const agingDate = new Date(Date.now() - 2.5 * 60 * 60 * 1000);
+      await prisma.airQualitySnapshot.create({
+        data: {
+          latitude: 26.846,
+          longitude: 80.946,
+          stationId: 'TEST_LKO_AGING_STATION',
+          stationName: 'Lucknow Central',
+          sourceProvider: 'CPCB',
+          aqiValue: 310,
+          aqiCategory: 'VERY_POOR',
+          dominantPollutant: 'PM2.5',
+          pm25: 190,
+          measurementTimestamp: agingDate,
+          provenanceType: 'VERIFIED_EXTERNAL_OBSERVATION',
+          completenessHours: 24,
+        },
+      });
+
+      const cachedContext = await buildAssistantContext(userA.id, { lat: 26.846, lon: 80.946 });
+
+      expect(cachedContext.environment.status).toBe('AVAILABLE');
+      expect(cachedContext.environment.aqi).toBe(310);
+      expect(cachedContext.environment.freshnessState).toBe('CACHED');
+      expect(cachedContext.environment.provenance).toBe('CACHED');
+      expect(cachedContext.environment.isLive).toBe(false);
+
+      // 5 hours old -> STALE
+      const staleDate = new Date(Date.now() - 5 * 60 * 60 * 1000);
+      await prisma.airQualitySnapshot.create({
+        data: {
+          latitude: 25.317,
+          longitude: 82.973,
+          stationId: 'TEST_VNS_STALE_STATION',
+          stationName: 'Varanasi Sigra',
+          sourceProvider: 'CPCB',
+          aqiValue: 280,
+          aqiCategory: 'POOR',
+          dominantPollutant: 'PM2.5',
+          pm25: 160,
+          measurementTimestamp: staleDate,
+          provenanceType: 'VERIFIED_EXTERNAL_OBSERVATION',
+          completenessHours: 24,
+        },
+      });
+
+      const staleContext = await buildAssistantContext(userA.id, { lat: 25.317, lon: 82.973 });
+
+      expect(staleContext.environment.status).toBe('AVAILABLE');
+      expect(staleContext.environment.aqi).toBe(280);
+      expect(staleContext.environment.freshnessState).toBe('STALE');
+      expect(staleContext.environment.provenance).toBe('STALE');
+      expect(staleContext.environment.isLive).toBe(false);
+    });
+
+    it('preserves complete provenance metadata and distinct timestamps in formatEnvironmentXml', () => {
+      const xml = formatEnvironmentXml({
+        aqi: 220,
+        standard: 'CPCB_NAQI',
+        category: 'POOR',
+        status: 'AVAILABLE',
+        provenance: 'CACHED',
+        provenanceType: 'VERIFIED_EXTERNAL_OBSERVATION',
+        sourceProvider: 'CPCB',
+        isLive: false,
+        stationName: 'Anand Vihar',
+        dominantPollutant: 'PM2.5',
+        pollutants: {
+          'PM2.5': { concentration: 135, unit: 'µg/m³', subIndex: null, averagingPeriodHours: 24 },
+        },
+        observationTimeUtc: '2026-11-20T10:00:00.000Z',
+        retrievalTimeUtc: '2026-11-20T10:05:00.000Z',
+        cacheTimeUtc: '2026-11-20T10:30:00.000Z',
+        freshnessState: 'FRESH',
+        averagingNotice: 'Certified 24h average',
+      });
+
+      expect(xml).toContain('<source_provider>CPCB</source_provider>');
+      expect(xml).toContain('<provenance>CACHED</provenance>');
+      expect(xml).toContain('<provenance_type>VERIFIED_EXTERNAL_OBSERVATION</provenance_type>');
+      expect(xml).toContain('<is_live>false</is_live>');
+      expect(xml).toContain('<observation_time>2026-11-20T10:00:00.000Z</observation_time>');
+      expect(xml).toContain('<retrieval_time>2026-11-20T10:05:00.000Z</retrieval_time>');
+      expect(xml).toContain('<cache_time>2026-11-20T10:30:00.000Z</cache_time>');
     });
   });
 
@@ -592,6 +775,264 @@ describe('BreatheWise AI — Module 5 Assistant & Recommendations Suite', () => 
         expect(res.reply).toBeTruthy();
         expect(res.recommendations.length).toBeGreaterThan(0);
         expect(res.recommendations[0].provenance).toBe('PRE_REVIEWED_RULE');
+      } finally {
+        process.env.GEMINI_API_KEY = origKey;
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('verifies gemini-3.8-flash as production default model', () => {
+      expect(DEFAULT_GEMINI_MODEL).toBe('gemini-3.8-flash');
+    });
+
+    it('retries transient HTTP 503 and succeeds on retry', async () => {
+      const origKey = process.env.GEMINI_API_KEY;
+      const origFetch = globalThis.fetch;
+      process.env.GEMINI_API_KEY = 'test-mock-key';
+
+      let callCount = 0;
+      globalThis.fetch = (async () => {
+        callCount++;
+        if (callCount === 1) {
+          return new Response(
+            JSON.stringify({
+              error: { code: 503, message: 'High demand spike', status: 'UNAVAILABLE' },
+            }),
+            { status: 503, headers: { 'Content-Type': 'application/json', 'retry-after': '1' } }
+          );
+        }
+        // Second call succeeds with valid JSON
+        return new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        reply: 'Outdoor air is currently moderate; exercise is acceptable.',
+                        recommendations: [
+                          {
+                            action: 'Proceed with light exercise',
+                            reason: 'PM2.5 within acceptable range.',
+                            expectedBenefit: 'Cardiovascular fitness maintained.',
+                            measurableImpact: 'Low inhaled particulate exposure.',
+                            assumptions: 'Urban park environment.',
+                            uncertainty: 'Microclimates may vary.',
+                            category: 'DAILY_ROUTINE',
+                            priority: 'MEDIUM',
+                            timeOfDay: 'ALL_DAY',
+                            implementationSteps: ['Warm up', 'Maintain hydration'],
+                            disclaimer: 'General guidance',
+                            evidenceStrength: 'MEASURED_OBSERVATION',
+                            provenance: 'AI_GENERATED',
+                          },
+                        ],
+                        contextSummary: {
+                          aqiStatus: 'AVAILABLE',
+                          aqiValue: 80,
+                          aqiCategory: 'SATISFACTORY',
+                          dominantPollutant: 'PM2.5',
+                          provenance: 'CACHED',
+                          isLive: false,
+                          observationTimeUtc: new Date().toISOString(),
+                          coarseLocation: 'Delhi',
+                          vulnerabilityTier: 'STANDARD',
+                        },
+                        evidenceCitations: ['CPCB NAQI'],
+                        disclaimer: 'General environmental guidance',
+                      }),
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }) as any;
+
+      try {
+        const context = await buildAssistantContext(userA.id);
+        const res = await generateAssistantResponse(
+          { message: 'Can I exercise outdoors?' },
+          context,
+          { timeoutMs: 15000 }
+        );
+        expect(callCount).toBe(2); // Succeeded on retry attempt 2
+        expect(res.reply).toBeTruthy();
+        expect(res.recommendations[0].provenance).toBe('AI_GENERATED');
+      } finally {
+        process.env.GEMINI_API_KEY = origKey;
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('exhausts retries on persistent HTTP 503 and cleanly falls back to deterministic rules engine', async () => {
+      const origKey = process.env.GEMINI_API_KEY;
+      const origFetch = globalThis.fetch;
+      process.env.GEMINI_API_KEY = 'test-mock-key';
+
+      let callCount = 0;
+      globalThis.fetch = (async () => {
+        callCount++;
+        return new Response(
+          JSON.stringify({
+            error: { code: 503, message: 'Continuous upstream capacity exhaustion', status: 'UNAVAILABLE' },
+          }),
+          { status: 503, headers: { 'Content-Type': 'application/json', 'retry-after': '1' } }
+        );
+      }) as any;
+
+      try {
+        const context = await buildAssistantContext(userA.id);
+        const res = await generateAssistantResponse(
+          { message: 'Can I go for a run?' },
+          context,
+          { timeoutMs: 15000 }
+        );
+        expect(callCount).toBe(3); // 1 initial + 2 retries = 3 total attempts
+        expect(res.reply).toBeTruthy();
+        expect(res.recommendations[0].provenance).toBe('PRE_REVIEWED_RULE');
+      } finally {
+        process.env.GEMINI_API_KEY = origKey;
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('does NOT retry permanent errors (HTTP 401 Unauthorized)', async () => {
+      const origKey = process.env.GEMINI_API_KEY;
+      const origFetch = globalThis.fetch;
+      process.env.GEMINI_API_KEY = 'invalid-api-key';
+
+      let callCount = 0;
+      globalThis.fetch = (async () => {
+        callCount++;
+        return new Response(
+          JSON.stringify({
+            error: { code: 401, message: 'API key not valid. Please pass a valid API key.', status: 'UNAUTHENTICATED' },
+          }),
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
+        );
+      }) as any;
+
+      try {
+        const context = await buildAssistantContext(userA.id);
+        const res = await generateAssistantResponse(
+          { message: 'How is the air quality?' },
+          context
+        );
+        expect(callCount).toBe(1); // Permanent failure: MUST NOT retry
+        expect(res.reply).toBeTruthy();
+        expect(res.recommendations[0].provenance).toBe('PRE_REVIEWED_RULE');
+      } finally {
+        process.env.GEMINI_API_KEY = origKey;
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('terminates retry loop when timeout budget is exhausted', async () => {
+      const origKey = process.env.GEMINI_API_KEY;
+      const origFetch = globalThis.fetch;
+      process.env.GEMINI_API_KEY = 'test-mock-key';
+
+      let callCount = 0;
+      globalThis.fetch = (async () => {
+        callCount++;
+        return new Response(
+          JSON.stringify({
+            error: { code: 503, message: 'Capacity spike', status: 'UNAVAILABLE' },
+          }),
+          { status: 503, headers: { 'Content-Type': 'application/json', 'retry-after': '10' } }
+        );
+      }) as any;
+
+      try {
+        const context = await buildAssistantContext(userA.id);
+        // Timeout 1200ms: retry delay of 10s or even 2s exceeds remaining budget, so loop aborts after attempt 1
+        const res = await generateAssistantResponse(
+          { message: 'Can I open windows?' },
+          context,
+          { timeoutMs: 1200 }
+        );
+        expect(callCount).toBe(1);
+        expect(res.recommendations[0].provenance).toBe('PRE_REVIEWED_RULE');
+      } finally {
+        process.env.GEMINI_API_KEY = origKey;
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('programmatically locks contextSummary.isLive and provenance to payload ground truth preventing AI fabrication', async () => {
+      const origKey = process.env.GEMINI_API_KEY;
+      const origFetch = globalThis.fetch;
+      process.env.GEMINI_API_KEY = 'test-mock-key';
+
+      // Mock LLM returning fabricated live telemetry
+      globalThis.fetch = (async () =>
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        reply: 'Here is your guidance.',
+                        recommendations: [
+                          {
+                            action: 'Keep windows closed',
+                            reason: 'High ambient particulate load.',
+                            expectedBenefit: 'Lower indoor PM2.5.',
+                            measurableImpact: 'Scrubbed indoor air.',
+                            assumptions: 'Standard residential home.',
+                            uncertainty: 'Microclimates.',
+                            category: 'INDOOR_PURIFICATION',
+                            priority: 'HIGH',
+                            timeOfDay: 'ALL_DAY',
+                            implementationSteps: ['Close windows', 'Run purifier'],
+                            disclaimer: 'General guidance',
+                            evidenceStrength: 'MEASURED_OBSERVATION',
+                            provenance: 'AI_GENERATED',
+                          },
+                        ],
+                        contextSummary: {
+                          aqiStatus: 'AVAILABLE',
+                          aqiValue: 200,
+                          aqiCategory: 'POOR',
+                          dominantPollutant: 'PM2.5',
+                          provenance: 'LIVE_MEASUREMENT', // Model attempts to claim LIVE_MEASUREMENT
+                          isLive: true,                   // Model attempts to claim isLive: true
+                          observationTimeUtc: '2026-11-20T12:00:00Z',
+                          coarseLocation: 'Delhi',
+                          vulnerabilityTier: 'STANDARD',
+                        },
+                        evidenceCitations: ['CPCB NAQI'],
+                        disclaimer: 'General environmental guidance',
+                      }),
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )) as any;
+
+      try {
+        const context = await buildAssistantContext(userA.id);
+        // context.environment.isLive is strictly false for database snapshot
+        expect(context.environment.isLive).toBe(false);
+
+        const res = await generateAssistantResponse(
+          { message: 'Should I open windows?' },
+          context
+        );
+
+        // Core safeguard: Programmatic ground truth invariant locks contextSummary
+        expect(res.contextSummary.isLive).toBe(false);
+        expect(res.contextSummary.provenance).toBe(context.environment.provenance);
+        expect(res.contextSummary.aqiStatus).toBe(context.environment.status);
       } finally {
         process.env.GEMINI_API_KEY = origKey;
         globalThis.fetch = origFetch;

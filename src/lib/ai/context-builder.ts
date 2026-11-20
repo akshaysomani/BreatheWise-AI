@@ -123,101 +123,242 @@ export async function buildAssistantContext(
   let environmentalContext: EnvironmentalContext;
 
   if (targetLat !== undefined && targetLon !== undefined) {
-    // Look for latest local snapshot
+    const now = Date.now();
+    const currentEvaluationTimeUtc = new Date(now).toISOString();
+
+    // Look for latest local snapshot within the 4-hour freshness threshold
     const latestSnapshot = await airQualityRepository.getLatestByLocation(
       targetLat,
       targetLon,
-      180 // 3 hours window
+      240 // 4 hours window (up to CACHED freshness threshold)
     );
 
     if (latestSnapshot) {
-      const now = Date.now();
-      const ageMs = now - latestSnapshot.measurementTimestamp.getTime();
-      const isFresh = ageMs <= 2 * 60 * 60 * 1000;
-      const isCached = ageMs <= 24 * 60 * 60 * 1000;
-      const freshnessState = isFresh ? 'FRESH' : isCached ? 'CACHED' : 'STALE';
+      const rawTimestamp = latestSnapshot.measurementTimestamp;
+      const isValidObsTime = rawTimestamp && !isNaN(rawTimestamp.getTime());
+      const obsTimeMs = isValidObsTime ? rawTimestamp.getTime() : null;
 
-      const pollutants: EnvironmentalContext['pollutants'] = {};
-      if (latestSnapshot.pm25 !== null) {
-        pollutants['PM2.5'] = {
-          concentration: latestSnapshot.pm25,
-          unit: 'µg/m³',
-          subIndex: null,
-          averagingPeriodHours: 24,
-        };
-      }
-      if (latestSnapshot.pm10 !== null) {
-        pollutants['PM10'] = {
-          concentration: latestSnapshot.pm10,
-          unit: 'µg/m³',
-          subIndex: null,
-          averagingPeriodHours: 24,
-        };
-      }
-      if (latestSnapshot.no2 !== null) {
-        pollutants['NO2'] = {
-          concentration: latestSnapshot.no2,
-          unit: 'µg/m³',
-          subIndex: null,
-          averagingPeriodHours: 24,
-        };
-      }
-      if (latestSnapshot.co !== null) {
-        pollutants['CO'] = {
-          concentration: latestSnapshot.co,
-          unit: 'mg/m³',
-          subIndex: null,
-          averagingPeriodHours: 8,
-        };
-      }
-      if (latestSnapshot.o3 !== null) {
-        pollutants['O3'] = {
-          concentration: latestSnapshot.o3,
-          unit: 'µg/m³',
-          subIndex: null,
-          averagingPeriodHours: 8,
-        };
+      // Has identified upstream provider?
+      const rawProvider = latestSnapshot.sourceProvider?.trim();
+      const hasIdentifiedProvider = Boolean(
+        rawProvider &&
+          rawProvider !== 'UNKNOWN' &&
+          rawProvider !== 'UNKNOWN_PROVIDER' &&
+          rawProvider !== 'UNKNOWN_PROVENANCE'
+      );
+      const sourceProvider = hasIdentifiedProvider ? rawProvider : null;
+
+      // Check fixture / synthetic flags
+      const isFixture =
+        latestSnapshot.provenanceType === 'DEVELOPMENT_SEED' ||
+        latestSnapshot.provenanceType === 'SYNTHETIC_FIXTURE';
+
+      let telemetryProvenance: TelemetryProvenanceStatus;
+      let provenanceType: ProvenanceType;
+      let freshnessState: 'FRESH' | 'CACHED' | 'STALE' | 'MISSING';
+      let observationTimeUtc: string | null = null;
+      let retrievalTimeUtc: string | null = null;
+      const cacheTimeUtc: string = currentEvaluationTimeUtc;
+
+      // Invariant: An SQLite database record is NEVER a live external observation
+      const isLive = false;
+
+      if (!isValidObsTime || obsTimeMs === null) {
+        // Missing or invalid observation timestamp -> fail closed to UNKNOWN_PROVENANCE
+        telemetryProvenance = 'NO_DATA';
+        provenanceType = 'UNKNOWN_PROVENANCE';
+        freshnessState = 'MISSING';
+      } else {
+        const ageMs = now - obsTimeMs;
+        observationTimeUtc = new Date(obsTimeMs).toISOString();
+
+        if (latestSnapshot.fetchedAt && !isNaN(latestSnapshot.fetchedAt.getTime())) {
+          retrievalTimeUtc = latestSnapshot.fetchedAt.toISOString();
+        }
+
+        if (isFixture) {
+          telemetryProvenance = 'MOCK';
+          provenanceType = latestSnapshot.provenanceType as ProvenanceType;
+          freshnessState = 'STALE';
+        } else if (!hasIdentifiedProvider) {
+          // No identified upstream provider -> UNKNOWN_PROVENANCE
+          telemetryProvenance = 'NO_DATA';
+          provenanceType = 'UNKNOWN_PROVENANCE';
+          freshnessState = 'MISSING';
+        } else if (ageMs < -300000) {
+          // Clock skew > 5 minutes in future -> invalid timestamp
+          telemetryProvenance = 'NO_DATA';
+          provenanceType = 'UNKNOWN_PROVENANCE';
+          freshnessState = 'MISSING';
+          observationTimeUtc = null;
+        } else if (ageMs <= 2 * 60 * 60 * 1000) {
+          // Within 2 hours from identified provider: valid cached snapshot
+          telemetryProvenance = 'CACHED';
+          provenanceType =
+            (latestSnapshot.provenanceType as ProvenanceType) || 'VERIFIED_EXTERNAL_OBSERVATION';
+          freshnessState = 'FRESH';
+        } else if (ageMs <= 4 * 60 * 60 * 1000) {
+          // 2 to 4 hours: aging cached snapshot
+          telemetryProvenance = 'CACHED';
+          provenanceType =
+            (latestSnapshot.provenanceType as ProvenanceType) || 'VERIFIED_EXTERNAL_OBSERVATION';
+          freshnessState = 'CACHED';
+        } else {
+          // Exceeds 4 hours freshness threshold: STALE
+          telemetryProvenance = 'STALE';
+          provenanceType =
+            (latestSnapshot.provenanceType as ProvenanceType) || 'HISTORICAL_IMPORTED';
+          freshnessState = 'STALE';
+        }
       }
 
-      environmentalContext = {
-        aqi: latestSnapshot.aqiValue,
-        standard:
-          latestSnapshot.completenessHours >= 16
-            ? 'CPCB_NAQI'
-            : 'ACUTE_1_HOUR_PROXY',
-        category: latestSnapshot.aqiCategory,
-        status: 'AVAILABLE',
-        provenance: latestSnapshot.provenanceType as TelemetryProvenanceStatus,
-        isLive: latestSnapshot.provenanceType === 'VERIFIED_EXTERNAL_OBSERVATION' && isFresh,
-        stationName: latestSnapshot.stationName || null,
-        dominantPollutant: latestSnapshot.dominantPollutant || 'PM2.5',
-        pollutants,
-        observationTimeUtc: latestSnapshot.measurementTimestamp.toISOString(),
-        freshnessState,
-        averagingNotice:
-          latestSnapshot.completenessHours >= 16
-            ? 'Meets certified CPCB data completeness (>=16 valid observation hours in 24h cycle).'
-            : 'Short-term acute 1-hour sensor proxy for immediate exposure mitigation. Does not represent certified 24-hour CPCB regulatory compliance.',
-      };
+      if (provenanceType === 'UNKNOWN_PROVENANCE') {
+        environmentalContext = {
+          aqi: null,
+          standard: 'UNAVAILABLE',
+          category: 'UNAVAILABLE',
+          status: 'NO_DATA',
+          provenance: 'UNKNOWN_PROVENANCE',
+          provenanceType: 'UNKNOWN_PROVENANCE',
+          sourceProvider: null,
+          isLive: false,
+          stationName: null,
+          dominantPollutant: null,
+          pollutants: {},
+          observationTimeUtc: null,
+          retrievalTimeUtc: null,
+          cacheTimeUtc: null,
+          freshnessState: 'MISSING',
+          averagingNotice:
+            'Air quality telemetry has unverified provenance or missing timestamp. No real-world AQI claim can be made.',
+        };
+      } else {
+        const pollutants: EnvironmentalContext['pollutants'] = {};
+        if (latestSnapshot.pm25 !== null) {
+          pollutants['PM2.5'] = {
+            concentration: latestSnapshot.pm25,
+            unit: 'µg/m³',
+            subIndex: null,
+            averagingPeriodHours: 24,
+          };
+        }
+        if (latestSnapshot.pm10 !== null) {
+          pollutants['PM10'] = {
+            concentration: latestSnapshot.pm10,
+            unit: 'µg/m³',
+            subIndex: null,
+            averagingPeriodHours: 24,
+          };
+        }
+        if (latestSnapshot.no2 !== null) {
+          pollutants['NO2'] = {
+            concentration: latestSnapshot.no2,
+            unit: 'µg/m³',
+            subIndex: null,
+            averagingPeriodHours: 24,
+          };
+        }
+        if (latestSnapshot.co !== null) {
+          pollutants['CO'] = {
+            concentration: latestSnapshot.co,
+            unit: 'mg/m³',
+            subIndex: null,
+            averagingPeriodHours: 8,
+          };
+        }
+        if (latestSnapshot.o3 !== null) {
+          pollutants['O3'] = {
+            concentration: latestSnapshot.o3,
+            unit: 'µg/m³',
+            subIndex: null,
+            averagingPeriodHours: 8,
+          };
+        }
+
+        environmentalContext = {
+          aqi: latestSnapshot.aqiValue,
+          standard:
+            latestSnapshot.completenessHours >= 16
+              ? 'CPCB_NAQI'
+              : 'ACUTE_1_HOUR_PROXY',
+          category: latestSnapshot.aqiCategory,
+          status: 'AVAILABLE',
+          provenance: telemetryProvenance,
+          provenanceType,
+          sourceProvider,
+          isLive: false, // Invariant: SQLite snapshot is never live
+          stationName: latestSnapshot.stationName || null,
+          dominantPollutant: latestSnapshot.dominantPollutant || 'PM2.5',
+          pollutants,
+          observationTimeUtc,
+          retrievalTimeUtc,
+          cacheTimeUtc,
+          freshnessState,
+          averagingNotice:
+            latestSnapshot.completenessHours >= 16
+              ? 'Meets certified CPCB data completeness (>=16 valid observation hours in 24h cycle). Cached database snapshot; not a live external measurement.'
+              : 'Short-term acute 1-hour sensor proxy for immediate exposure mitigation. Cached database snapshot; not a live external measurement.',
+        };
+      }
     } else {
       // Query recent history without age limit if available
       const history = await airQualityRepository.getRecentHistory(targetLat, targetLon, 1);
       if (history.length > 0) {
         const hist = history[0];
-        environmentalContext = {
-          aqi: hist.aqiValue,
-          standard: 'ACUTE_1_HOUR_PROXY',
-          category: hist.aqiCategory,
-          status: 'AVAILABLE',
-          provenance: hist.provenanceType as TelemetryProvenanceStatus,
-          isLive: false,
-          stationName: hist.stationName || null,
-          dominantPollutant: hist.dominantPollutant || 'PM2.5',
-          pollutants: {},
-          observationTimeUtc: hist.measurementTimestamp.toISOString(),
-          freshnessState: 'STALE',
-          averagingNotice: 'Historical regional telemetry record (>3 hours old). Fresh data unavailable.',
-        };
+        const rawTimestamp = hist.measurementTimestamp;
+        const isValidObsTime = rawTimestamp && !isNaN(rawTimestamp.getTime());
+        const rawProvider = hist.sourceProvider?.trim();
+        const hasIdentifiedProvider = Boolean(
+          rawProvider &&
+            rawProvider !== 'UNKNOWN' &&
+            rawProvider !== 'UNKNOWN_PROVIDER' &&
+            rawProvider !== 'UNKNOWN_PROVENANCE'
+        );
+
+        if (!isValidObsTime || !hasIdentifiedProvider) {
+          environmentalContext = {
+            aqi: null,
+            standard: 'UNAVAILABLE',
+            category: 'UNAVAILABLE',
+            status: 'NO_DATA',
+            provenance: 'UNKNOWN_PROVENANCE',
+            provenanceType: 'UNKNOWN_PROVENANCE',
+            sourceProvider: null,
+            isLive: false,
+            stationName: null,
+            dominantPollutant: null,
+            pollutants: {},
+            observationTimeUtc: null,
+            retrievalTimeUtc: null,
+            cacheTimeUtc: null,
+            freshnessState: 'MISSING',
+            averagingNotice:
+              'Historical telemetry record has unverified provenance or missing timestamp.',
+          };
+        } else {
+          const isHistFixture =
+            hist.provenanceType === 'DEVELOPMENT_SEED' ||
+            hist.provenanceType === 'SYNTHETIC_FIXTURE';
+          environmentalContext = {
+            aqi: hist.aqiValue,
+            standard: 'ACUTE_1_HOUR_PROXY',
+            category: hist.aqiCategory,
+            status: 'AVAILABLE',
+            provenance: isHistFixture ? 'MOCK' : 'STALE',
+            provenanceType: (hist.provenanceType as ProvenanceType) || 'HISTORICAL_IMPORTED',
+            sourceProvider: hist.sourceProvider,
+            isLive: false,
+            stationName: hist.stationName || null,
+            dominantPollutant: hist.dominantPollutant || 'PM2.5',
+            pollutants: {},
+            observationTimeUtc: hist.measurementTimestamp.toISOString(),
+            retrievalTimeUtc: hist.fetchedAt ? hist.fetchedAt.toISOString() : null,
+            cacheTimeUtc: currentEvaluationTimeUtc,
+            freshnessState: 'STALE',
+            averagingNotice:
+              'Historical regional telemetry record (>3 hours old). Cached database snapshot; not a live external measurement.',
+          };
+        }
       } else {
         environmentalContext = {
           aqi: null,
@@ -225,11 +366,15 @@ export async function buildAssistantContext(
           category: 'UNAVAILABLE',
           status: 'NO_DATA',
           provenance: 'UNKNOWN_PROVENANCE',
+          provenanceType: 'UNKNOWN_PROVENANCE',
+          sourceProvider: null,
           isLive: false,
           stationName: null,
           dominantPollutant: null,
           pollutants: {},
           observationTimeUtc: null,
+          retrievalTimeUtc: null,
+          cacheTimeUtc: null,
           freshnessState: 'MISSING',
           averagingNotice: 'No localized air quality monitoring telemetry available for this location.',
         };
@@ -242,11 +387,15 @@ export async function buildAssistantContext(
       category: 'UNAVAILABLE',
       status: 'NO_DATA',
       provenance: 'UNKNOWN_PROVENANCE',
+      provenanceType: 'UNKNOWN_PROVENANCE',
+      sourceProvider: null,
       isLive: false,
       stationName: null,
       dominantPollutant: null,
       pollutants: {},
       observationTimeUtc: null,
+      retrievalTimeUtc: null,
+      cacheTimeUtc: null,
       freshnessState: 'MISSING',
       averagingNotice: 'No location coordinates provided. Environmental context unavailable.',
     };
@@ -272,10 +421,14 @@ export function formatEnvironmentXml(env: EnvironmentalContext): string {
 <category>${env.category}</category>
 <dominant_pollutant>${env.dominantPollutant ?? 'NONE'}</dominant_pollutant>
 <station_name>${env.stationName ?? 'UNKNOWN'}</station_name>
+<source_provider>${env.sourceProvider ?? 'NONE'}</source_provider>
 <provenance>${env.provenance}</provenance>
+<provenance_type>${env.provenanceType ?? 'UNKNOWN_PROVENANCE'}</provenance_type>
 <is_live>${env.isLive}</is_live>
 <freshness>${env.freshnessState}</freshness>
 <observation_time>${env.observationTimeUtc ?? 'NONE'}</observation_time>
+<retrieval_time>${env.retrievalTimeUtc ?? 'NONE'}</retrieval_time>
+<cache_time>${env.cacheTimeUtc ?? 'NONE'}</cache_time>
 <averaging_notice>${env.averagingNotice}</averaging_notice>
 <pollutants>
 ${Object.entries(env.pollutants || {})
