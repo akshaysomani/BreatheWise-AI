@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Activity,
   Layers,
+  Leaf,
 } from 'lucide-react';
 import { StructuredRecommendation } from '@/lib/validations/assistant.schema';
 
@@ -21,16 +22,61 @@ interface RecommendationCardProps {
   recommendation: StructuredRecommendation;
   recommendationId?: string | null;
   onFeedbackSubmitted?: (isHelpful: boolean) => void;
+  onLogAsImpact?: (recommendation: StructuredRecommendation) => void;
 }
 
 export function RecommendationCard({
   recommendation,
   recommendationId,
   onFeedbackSubmitted,
+  onLogAsImpact,
 }: RecommendationCardProps) {
   const [feedback, setFeedback] = useState<'HELPFUL' | 'NOT_HELPFUL' | null>(null);
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [expandedDetails, setExpandedDetails] = useState(false);
+  const [loggedImpact, setLoggedImpact] = useState(false);
+  const [loggingImpact, setLoggingImpact] = useState(false);
+
+  const handleLogImpact = async () => {
+    if (loggingImpact || loggedImpact) return;
+    setLoggingImpact(true);
+
+    try {
+      if (onLogAsImpact) {
+        onLogAsImpact(recommendation);
+        setLoggedImpact(true);
+        return;
+      }
+
+      // Map recommendation category to impact action type
+      let actionType: string = 'COMMUNITY_RECOMMENDATION';
+      if (recommendation.category === 'COMMUTE_PLAN') actionType = 'COMMUTE_SHIFT';
+      else if (recommendation.category === 'INDOOR_PURIFICATION') actionType = 'HEPA_PURIFICATION';
+      else if (recommendation.category === 'DAILY_ROUTINE') actionType = 'VENTILATION_WINDOW';
+      else if (recommendation.category === 'SUSTAINABLE_ALTERNATIVE') actionType = 'ENERGY_SAVING';
+
+      const res = await fetch('/api/impact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actionType,
+          title: recommendation.action.slice(0, 140),
+          co2AvoidedKg: 0.25,
+          pm25AvoidedGrams: 0.15,
+          calculationFormula: recommendation.measurableImpact || recommendation.reason.slice(0, 250),
+          uncertaintyMargin: 0.15,
+        }),
+      });
+
+      if (res.ok) {
+        setLoggedImpact(true);
+      }
+    } catch {
+      // Graceful fallback
+    } finally {
+      setLoggingImpact(false);
+    }
+  };
 
   const handleFeedback = async (isHelpful: boolean) => {
     if (submittingFeedback || feedback !== null) return;
@@ -197,35 +243,52 @@ export function RecommendationCard({
             {recommendation.disclaimer}
           </p>
 
-          {/* Feedback buttons */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-[10px] text-[#68766C] font-medium">Was this helpful?</span>
+          <div className="flex items-center gap-3 shrink-0">
+            {/* Record as Impact Action Button */}
             <button
               type="button"
-              onClick={() => handleFeedback(true)}
-              disabled={submittingFeedback || feedback !== null}
-              aria-label="Helpful recommendation"
-              className={`p-1.5 rounded transition-colors ${
-                feedback === 'HELPFUL'
-                  ? 'bg-[#287A4B] text-white'
-                  : 'hover:bg-[#EEF3EA] text-[#68766C] hover:text-[#287A4B]'
+              onClick={handleLogImpact}
+              disabled={loggingImpact || loggedImpact}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                loggedImpact
+                  ? 'bg-[#EEF3EA] text-[#397A55] border border-[#397A55]/30'
+                  : 'bg-white hover:bg-[#EEF3EA] text-[#397A55] border border-[#E2E8DE]'
               }`}
             >
-              <ThumbsUp className="w-3.5 h-3.5" />
+              <Leaf className="w-3.5 h-3.5" />
+              <span>{loggedImpact ? 'Logged to Impact ✓' : 'Log as Impact'}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => handleFeedback(false)}
-              disabled={submittingFeedback || feedback !== null}
-              aria-label="Not helpful recommendation"
-              className={`p-1.5 rounded transition-colors ${
-                feedback === 'NOT_HELPFUL'
-                  ? 'bg-[#B8423D] text-white'
-                  : 'hover:bg-[#EEF3EA] text-[#68766C] hover:text-[#B8423D]'
-              }`}
-            >
-              <ThumbsDown className="w-3.5 h-3.5" />
-            </button>
+
+            {/* Feedback buttons */}
+            <div className="flex items-center gap-1.5 border-l border-[#E2E8DE] pl-2">
+              <span className="text-[10px] text-[#68766C] font-medium">Helpful?</span>
+              <button
+                type="button"
+                onClick={() => handleFeedback(true)}
+                disabled={submittingFeedback || feedback !== null}
+                aria-label="Helpful recommendation"
+                className={`p-1.5 rounded transition-colors ${
+                  feedback === 'HELPFUL'
+                    ? 'bg-[#287A4B] text-white'
+                    : 'hover:bg-[#EEF3EA] text-[#68766C] hover:text-[#287A4B]'
+                }`}
+              >
+                <ThumbsUp className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFeedback(false)}
+                disabled={submittingFeedback || feedback !== null}
+                aria-label="Not helpful recommendation"
+                className={`p-1.5 rounded transition-colors ${
+                  feedback === 'NOT_HELPFUL'
+                    ? 'bg-[#B8423D] text-white'
+                    : 'hover:bg-[#EEF3EA] text-[#68766C] hover:text-[#B8423D]'
+                }`}
+              >
+                <ThumbsDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>

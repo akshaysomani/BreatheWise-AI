@@ -58,12 +58,12 @@ export function Modal({
       aria-modal="true"
       aria-labelledby={title ? 'modal-title' : undefined}
       aria-describedby={description ? 'modal-description' : undefined}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#27352D]/50 backdrop-blur-xs animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-4 bg-[#27352D]/50 backdrop-blur-xs animate-in fade-in duration-200 overflow-y-auto"
       onClick={onClose}
     >
       <div
         className={cn(
-          'relative w-full bg-white rounded-[14px] border border-[#E2E8DE] shadow-[0_12px_36px_rgba(39,53,45,0.12)] p-6 transition-all',
+          'relative w-full bg-white rounded-[14px] border border-[#E2E8DE] shadow-[0_12px_36px_rgba(39,53,45,0.12)] p-6 transition-all max-h-[90vh] overflow-y-auto',
           maxWidths[resolvedSize]
         )}
         onClick={(e) => e.stopPropagation()}

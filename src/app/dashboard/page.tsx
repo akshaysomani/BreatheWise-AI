@@ -15,11 +15,14 @@ import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { AirQualityRadar } from '@/components/dashboard/AirQualityRadar';
 import { AssistantWorkspace } from '@/components/dashboard/AssistantWorkspace';
+import { ImpactWorkspace } from '@/components/dashboard/ImpactWorkspace';
+import { CommunityWorkspace } from '@/components/dashboard/CommunityWorkspace';
 import {
   Wind,
   ShieldCheck,
   Home,
   User,
+  Users,
   LogOut,
   Sparkles,
   Info,
@@ -106,7 +109,7 @@ export default function DashboardPage() {
   const [aqiCache, setAqiCache] = useState<any>(null);
 
   // Active view tab
-  const [activeTab, setActiveTab] = useState<'overview' | 'assistant' | 'household' | 'routines' | 'impact' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'assistant' | 'household' | 'routines' | 'impact' | 'community' | 'settings'>('overview');
 
   // Household Setup Form State
   const [setupModalOpen, setSetupModalOpen] = useState(false);
@@ -413,7 +416,18 @@ export default function DashboardPage() {
             }`}
           >
             <Activity className="w-4 h-4" />
-            Impact Records ({impactLogs.length})
+            Impact Tracker
+          </button>
+          <button
+            onClick={() => setActiveTab('community')}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
+              activeTab === 'community'
+                ? 'bg-[#397A55] text-white shadow-sm'
+                : 'text-[#27352D] hover:bg-[#EEF3EA]'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            Community
           </button>
           <button
             onClick={() => setActiveTab('settings')}
@@ -715,81 +729,16 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Tab 4: Impact Records */}
-        {activeTab === 'impact' && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-[#27352D] font-[var(--font-heading)]">
-                Personal Environmental Impact Tracker
-              </h2>
-              <p className="text-xs text-[#68766C]">
-                Audit-grade records calculating avoided emissions and particulate matter.
-              </p>
-            </div>
+        {/* Tab 4: Impact Tracker */}
+        {activeTab === 'impact' && <ImpactWorkspace />}
 
-            {impactAggregates && impactAggregates.totalLogsCount > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Card className="bg-white border-[#E2E8DE]">
-                  <CardContent className="p-5 text-center">
-                    <span className="text-xs font-semibold text-[#68766C]">Total Carbon Avoided</span>
-                    <div className="text-3xl font-extrabold text-[#397A55] mt-1 font-[var(--font-heading)]">
-                      {impactAggregates.totalCO2AvoidedKg} kg
-                    </div>
-                    <span className="text-[11px] text-[#68766C]">CO2e (DEFRA benchmark)</span>
-                  </CardContent>
-                </Card>
-                <Card className="bg-white border-[#E2E8DE]">
-                  <CardContent className="p-5 text-center">
-                    <span className="text-xs font-semibold text-[#68766C]">Particulates Avoided</span>
-                    <div className="text-3xl font-extrabold text-[#397A55] mt-1 font-[var(--font-heading)]">
-                      {impactAggregates.totalPM25AvoidedGrams} g
-                    </div>
-                    <span className="text-[11px] text-[#68766C]">Primary PM2.5 source reduction</span>
-                  </CardContent>
-                </Card>
-                <Card className="bg-white border-[#E2E8DE]">
-                  <CardContent className="p-5 text-center">
-                    <span className="text-xs font-semibold text-[#68766C]">Clean Travel Distance</span>
-                    <div className="text-3xl font-extrabold text-[#27352D] mt-1 font-[var(--font-heading)]">
-                      {impactAggregates.totalDistanceShiftedKm} km
-                    </div>
-                    <span className="text-[11px] text-[#68766C]">Shifted to low-emission transit</span>
-                  </CardContent>
-                </Card>
-              </div>
-            ) : null}
-
-            {impactLogs.length > 0 ? (
-              <Card className="bg-white border-[#E2E8DE]">
-                <CardHeader>
-                  <CardTitle className="text-base">Audit Trail Logs</CardTitle>
-                  <CardDescription>Mathematical logs with explicit uncertainty bounds</CardDescription>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="divide-y divide-[#E2E8DE]">
-                    {impactLogs.map((log) => (
-                      <div key={log.id} className="p-4 flex items-center justify-between hover:bg-[#F7F8F3] text-xs">
-                        <div className="space-y-1">
-                          <span className="font-bold text-sm text-[#27352D] block">{log.title}</span>
-                          <span className="text-[#68766C]">{log.calculationFormula}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="font-bold text-[#397A55] block">+{log.co2AvoidedKg} kg CO2e</span>
-                          <span className="text-[11px] text-[#68766C]">±{(log.uncertaintyMargin * 100).toFixed(0)}% margin</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <EmptyState
-                icon={<Activity className="w-8 h-8 text-[#68766C]" />}
-                title="No Impact Actions Logged Yet"
-                description="When you commute via metro or filter your home air during smog events, verifiable impact logs will appear here."
-              />
-            )}
-          </div>
+        {/* Tab 5: Community Environmental Intelligence */}
+        {activeTab === 'community' && (
+          <CommunityWorkspace
+            userLat={28.61}
+            userLon={77.20}
+            userCity={household?.profile?.city || 'Delhi'}
+          />
         )}
 
         {/* Tab 5: Account & Privacy Settings */}

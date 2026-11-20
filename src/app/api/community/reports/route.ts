@@ -2,7 +2,10 @@ import { NextRequest } from 'next/server';
 import { apiSuccess, apiError, handleApiError } from '@/lib/api-response';
 import { getSessionUser } from '@/lib/auth-guard';
 import { communityService } from '@/services/community.service';
-import { createCommunityReportSchema } from '@/lib/validations';
+import {
+  createCommunityReportSchema,
+  communityQueryFilterSchema,
+} from '@/lib/validations/community.schema';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export async function GET(req: NextRequest) {
@@ -14,15 +17,26 @@ export async function GET(req: NextRequest) {
 
   try {
     const { searchParams } = new URL(req.url);
-    const lat = Number(searchParams.get('lat') || 28.61);
-    const lon = Number(searchParams.get('lon') || 77.20);
+    const queryParams: Record<string, string> = {};
+    searchParams.forEach((val, key) => {
+      queryParams[key] = val;
+    });
 
-    const reports = await communityService.getNearbyObservations(lat, lon);
+    const parsedFilter = communityQueryFilterSchema.safeParse(queryParams);
+    const filter = parsedFilter.success
+      ? parsedFilter.data
+      : { lat: 28.61, lon: 77.20, limit: 30, offset: 0, radiusKm: 30 };
+
+    const { reports, totalCount } = await communityService.getFilteredFeed(filter);
 
     return apiSuccess({
       reports,
-      privacyPolicy: 'All community report coordinates are strictly fuzzed to ~1.1 km precision to preserve household privacy.',
-      scientificDisclaimer: 'Community observations reflect subjective user reports and are strictly segregated from certified regulatory air station data.',
+      totalCount,
+      privacyPolicy:
+        'All community report coordinates are strictly fuzzed to ~1.1 km precision. Household identities, real names, and exact addresses are never stored or published.',
+      scientificDisclaimer:
+        'Community observations reflect qualitative citizen reports and are strictly segregated from certified regulatory air station data. isOfficialData is ALWAYS false.',
+      isOfficialData: false,
     });
   } catch (error) {
     return handleApiError(error, 'GET /api/community/reports');

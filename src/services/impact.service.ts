@@ -1,63 +1,139 @@
-import { impactRepository, CreateImpactLogInput } from '@/repositories/impact.repository';
+import { impactRepository } from '@/repositories/impact.repository';
+import {
+  CreateImpactLogInput,
+  UpdateImpactLogInput,
+  ImpactQueryFilter,
+} from '@/lib/validations/impact.schema';
+import {
+  calculationEngine,
+  PASSENGER_TRANSPORT_FACTORS,
+  WASTE_FACTORS,
+  GRID_ELECTRICITY_FACTORS,
+} from '@/services/calculation-engine';
 
-/**
- * Passenger Transport Benchmark Conversion Factors (kg CO2e per passenger-km)
- * 
- * SCIENTIFIC PROVENANCE & LIMITATIONS AUDIT (M2.1):
- * - SOURCE: UK Department for Energy Security and Net Zero (DESNZ) / DEFRA 2023/2024 Greenhouse Gas Conversion Factors.
- * - BASELINE FACTORS:
- *   - SOLO_CAR: 0.171 kg CO2e/km (Average petrol car, single occupancy)
- *   - DIESEL_CAR: 0.165 kg CO2e/km
- *   - MOTORCYCLE: 0.105 kg CO2e/km
- *   - BUS: 0.089 kg CO2e/km (Average local urban bus per passenger-km)
- *   - METRO: 0.035 kg CO2e/km (London Underground / urban light rail per passenger-km)
- *   - CARPOOL: 0.085 kg CO2e/km (Two passengers sharing medium vehicle)
- * - GEOGRAPHIC APPLICABILITY & GRID DEPENDENCY:
- *   Electric transit (metro, electric bus) factors depend on regional electricity grid emission factors.
- *   In coal-heavy electricity grids (e.g. India at ~0.71 kg CO2/kWh vs UK at ~0.207 kg CO2/kWh),
- *   electric transit emissions are proportionally higher.
- * - UNCERTAINTY BOUNDS: A standard error margin of ±15% is attached to reflect variability in vehicle age,
- *   congestion idling, and HVAC power consumption.
- */
-export const EMISSION_FACTORS: Record<string, { co2PerKm: number; pm25GramsPerKm: number }> = {
-  SOLO_CAR: { co2PerKm: 0.171, pm25GramsPerKm: 0.015 },
-  DIESEL_CAR: { co2PerKm: 0.165, pm25GramsPerKm: 0.025 },
-  MOTORCYCLE: { co2PerKm: 0.105, pm25GramsPerKm: 0.012 },
-  BUS: { co2PerKm: 0.089, pm25GramsPerKm: 0.006 },
-  METRO: { co2PerKm: 0.035, pm25GramsPerKm: 0.001 },
-  CARPOOL: { co2PerKm: 0.085, pm25GramsPerKm: 0.007 },
-  BICYCLE: { co2PerKm: 0.0, pm25GramsPerKm: 0.0 },
-  WALK: { co2PerKm: 0.0, pm25GramsPerKm: 0.0 },
-};
+export const EMISSION_FACTORS = PASSENGER_TRANSPORT_FACTORS;
 
 export const impactService = {
   async getLogs(userId: string, limit?: number) {
     return impactRepository.getByUserId(userId, limit);
   },
 
+  async getFilteredLogs(userId: string, filter: Partial<ImpactQueryFilter> = {}) {
+    return impactRepository.getFiltered(userId, filter);
+  },
+
+  async getLogById(id: string, userId: string) {
+    return impactRepository.getById(id, userId);
+  },
+
   async recordLog(userId: string, data: CreateImpactLogInput) {
     return impactRepository.create(userId, data);
+  },
+
+  async updateLog(id: string, userId: string, data: UpdateImpactLogInput) {
+    return impactRepository.update(id, userId, data);
+  },
+
+  async deleteLog(id: string, userId: string) {
+    return impactRepository.delete(id, userId);
   },
 
   async getAggregates(userId: string) {
     return impactRepository.getAggregates(userId);
   },
 
-  calculateTransitSavings(distanceKm: number, baselineMode: string, optimizedMode: string) {
-    const base = EMISSION_FACTORS[baselineMode] || EMISSION_FACTORS.SOLO_CAR;
-    const opt = EMISSION_FACTORS[optimizedMode] || EMISSION_FACTORS.METRO;
+  calculateTransitSavings(
+    distanceKm: number,
+    baselineMode: string,
+    optimizedMode: string,
+    customOccupancy?: number
+  ) {
+    return calculationEngine.calculateTransportSavings({
+      distanceKm,
+      baselineMode,
+      optimizedMode,
+      customOccupancy,
+    });
+  },
 
-    const co2SavedKg = Math.max(0, distanceKm * (base.co2PerKm - opt.co2PerKm));
-    const pm25SavedGrams = Math.max(0, distanceKm * (base.pm25GramsPerKm - opt.pm25GramsPerKm));
+  calculateWasteSavings(wasteType: string, quantityKg: number) {
+    return calculationEngine.calculateWasteSavings({
+      wasteType,
+      quantityKg,
+    });
+  },
 
-    const formula = `${distanceKm} km * (${base.co2PerKm} kg/km [${baselineMode}] - ${opt.co2PerKm} kg/km [${optimizedMode}])`;
+  calculateEnergySavings(kwhSaved: number, gridRegion?: string, actionType?: string) {
+    return calculationEngine.calculateEnergySavings({
+      kwhSaved,
+      gridRegion,
+      actionType,
+    });
+  },
+
+  async exportLogsAsCsv(userId: string, options: Partial<ImpactQueryFilter> = {}) {
+    const { logs } = await impactRepository.getFiltered(userId, { ...options, limit: 1000, offset: 0 });
+
+    const headers = [
+      'Log ID',
+      'Date (UTC)',
+      'Action Category',
+      'Activity Title',
+      'CO2e Avoided (kg)',
+      'PM2.5 Avoided (g)',
+      'Distance Shifted (km)',
+      'Calculation Formula',
+      'Uncertainty Margin (±%)',
+    ];
+
+    const escapeCsvField = (val: any) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const rows = logs.map((log) => [
+      escapeCsvField(log.id),
+      escapeCsvField(new Date(log.date).toISOString().split('T')[0]),
+      escapeCsvField(log.actionType),
+      escapeCsvField(log.title),
+      escapeCsvField(log.co2AvoidedKg),
+      escapeCsvField(log.pm25AvoidedGrams),
+      escapeCsvField(log.distanceShiftedKm ?? ''),
+      escapeCsvField(log.calculationFormula),
+      escapeCsvField(`${Math.round(log.uncertaintyMargin * 100)}%`),
+    ]);
+
+    return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  },
+
+  async exportLogsAsJson(userId: string, options: Partial<ImpactQueryFilter> = {}) {
+    const { logs, totalCount } = await impactRepository.getFiltered(userId, { ...options, limit: 1000, offset: 0 });
+    const aggregates = await impactRepository.getAggregates(userId);
 
     return {
-      co2AvoidedKg: Math.round(co2SavedKg * 100) / 100,
-      pm25AvoidedGrams: Math.round(pm25SavedGrams * 100) / 100,
-      distanceShiftedKm: distanceKm,
-      calculationFormula: formula,
-      uncertaintyMargin: 0.15, // Stated ±15% standard error margin
+      exportedAt: new Date().toISOString(),
+      methodologyVersion: calculationEngine.getMethodologyMetadata().version,
+      authoritativeStandards: [
+        'UK DESNZ / DEFRA 2024 Greenhouse Gas Conversion Factors',
+        'India Central Electricity Authority (CEA) Baseline Database v19.0',
+        'US EPA Waste Reduction Model (WARM) v15',
+        'ARAI / CPCB Automotive Emission Factors for Indian In-Use Fleet',
+      ],
+      userAggregates: aggregates,
+      recordCount: totalCount,
+      logs: logs.map((l) => ({
+        id: l.id,
+        date: l.date,
+        actionType: l.actionType,
+        title: l.title,
+        co2AvoidedKg: l.co2AvoidedKg,
+        pm25AvoidedGrams: l.pm25AvoidedGrams,
+        distanceShiftedKm: l.distanceShiftedKm,
+        calculationFormula: l.calculationFormula,
+        uncertaintyMargin: l.uncertaintyMargin,
+        createdAt: l.createdAt,
+      })),
     };
   },
 };
