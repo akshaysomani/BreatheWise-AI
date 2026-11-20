@@ -54,7 +54,7 @@ export const deterministicFallbackEngine = {
       q.includes('emergency')
     ) {
       reply =
-        'CRITICAL HEALTH ALERT: If you or a family member are experiencing acute respiratory distress, severe wheezing, chest pain, or difficulty speaking, please call emergency medical services immediately (e.g., 112 in India). Environmental adjustments cannot substitute for emergency clinical care.';
+        'CRITICAL HEALTH ALERT: If you or a family member are experiencing acute respiratory distress, severe wheezing, chest pain, or difficulty speaking, please call emergency medical services immediately (e.g., India\'s Emergency Response Support System at 112). Environmental adjustments cannot substitute for emergency clinical care.';
       recommendations.push({
         action: 'Seek Immediate Emergency Medical Attention',
         reason:
@@ -67,7 +67,7 @@ export const deterministicFallbackEngine = {
         priority: 'HIGH',
         timeOfDay: 'ALL_DAY',
         implementationSteps: [
-          'Call local emergency services (112) or proceed to the nearest emergency room.',
+          'Call local emergency services (112 in India) or proceed to the nearest emergency medical facility immediately.',
           'Administer prescribed quick-relief inhaler (e.g., Albuterol/Salbutamol) as directed by doctor.',
           'Remain seated upright in a sealed room with active mechanical HEPA filtration.',
         ],
@@ -128,25 +128,24 @@ export const deterministicFallbackEngine = {
           provenance: 'PRE_REVIEWED_RULE',
         });
       } else if (isSevere) {
-        reply = `Outdoor air quality is currently in the ${env.category} category (AQI ${aqi}, dominant pollutant: ${env.dominantPollutant}). Heavy outdoor physical exertion is strongly discouraged. At this pollution density, active breathing deposits fine particulate deep into alveolar tissue.`;
+        reply = `Outdoor air quality is currently in the ${env.category} category (AQI ${aqi}, dominant pollutant: ${env.dominantPollutant}). Heavy outdoor physical exertion is strongly discouraged under CPCB public health advisories. At this pollution density, active breathing deposits fine particulate deep into alveolar tissue.`;
         recommendations.push({
-          action: 'Cancel Outdoor Exercise and Remain in Sealed Indoor Spaces',
-          reason: `Ambient AQI ${aqi} exceeds health thresholds; minute ventilation during jogging increases inhaled particulate dose by 4-5x.`,
-          expectedBenefit: 'Avoids acute inflammatory pulmonary response and microvascular constriction.',
-          measurableImpact: `Avoids inhaling ~${Math.round(
-            (aqi || 250) * 0.045
-          )} µg of fine particulate matter per 30 minutes of running.`,
-          assumptions: 'Minute ventilation Ve = 45 L/min during running.',
-          uncertainty: 'Individual respiratory deposition fractions vary.',
+          action: 'Cancel Outdoor Exercise and Remain in Filtered Indoor Spaces',
+          reason: `Ambient AQI ${aqi} falls in the ${env.category} category under CPCB guidelines. Elevated minute ventilation during aerobic exercise drastically increases inhaled particulate dose.`,
+          expectedBenefit: 'Avoids acute inflammatory pulmonary response and airway hyper-reactivity.',
+          measurableImpact: 'Substantially reduces acute particulate inhalation dose compared to outdoor exercise (CPCB Health Advisory).',
+          assumptions: 'Minute ventilation Ve = 45 L/min during running; user has access to an indoor space with mechanical filtration.',
+          uncertainty: 'Individual respiratory sensitivity and building envelope leakage vary.',
           category: 'DAILY_ROUTINE',
           priority: 'HIGH',
           timeOfDay: 'ALL_DAY',
           implementationSteps: [
-            'Move workouts indoors to a room with a verified True HEPA air purifier.',
+            'Move workouts indoors to a room with an active True HEPA air purifier.',
             'Keep doors and windows firmly sealed against ambient particulate ingress.',
-            'Vulnerable members (asthmatic, pediatric, senior) should stay strictly indoors.',
+            'If outdoor transit is unavoidable, wear a well-fitted certified particulate respirator (N95, N99, or FFP2) with an airtight seal. Standard particulate respirators filter particulate matter (PM2.5/PM10) but do not filter combustion gases (CO, NO2, ozone) unless fitted with activated carbon sorbents.',
+            'Vulnerable members (asthmatic, pediatric, senior) should stay strictly indoors. If acute respiratory distress occurs, contact emergency medical care.',
           ],
-          disclaimer: 'Guidance based on CPCB health advisory criteria.',
+          disclaimer: 'Guidance based on CPCB NAQI health advisory criteria.',
           evidenceStrength: 'MEASURED_OBSERVATION',
           provenance: 'PRE_REVIEWED_RULE',
         });
@@ -204,12 +203,12 @@ export const deterministicFallbackEngine = {
       if (isSevere || isUnhealthy) {
         reply = `With outdoor air quality in the ${env.category} bracket (AQI ${aqi ?? 'elevated'}), natural window ventilation will drive particulate pollution indoors. Maintain closed windows and operate your HEPA air filtration system continuously.`;
         recommendations.push({
-          action: 'Keep Windows Sealed and Run HEPA Purifier at 5.0 ACH',
-          reason: `Outdoor PM2.5 rapidly infiltrates unsealed windows (infiltration factor 0.5-0.8), rapidly degrading indoor air quality.`,
-          expectedBenefit: `Maintains indoor PM2.5 below ${house.indoorPM25Target} µg/m³ for family protection.`,
-          measurableImpact: `${house.requiredCADR_CFM ?? 200} CFM HEPA clean air delivery recommended for your room volume.`,
-          assumptions: 'Target ACH = 5.0 for acute particulate defense; residential ceiling height 9 ft.',
-          uncertainty: 'Infiltration rate depends on window gasket sealing quality.',
+          action: 'Keep Windows Sealed and Operate HEPA Filtration at 5.0 ACH Design Target',
+          reason: `Outdoor PM2.5 rapidly infiltrates unsealed windows (typical infiltration factors of 0.5-0.8), rapidly elevating indoor particulate concentrations.`,
+          expectedBenefit: `Maintains indoor particulate baseline below ambient levels through continuous recirculating filtration.`,
+          measurableImpact: `${house.requiredCADR_CFM ?? 200} CFM clean air delivery recommended for your room volume based on a 5.0 ACH design target.`,
+          assumptions: 'Selected 5.0 ACH engineering design target for acute particulate/smoke mitigation (referenced in CDC / AHAM CADR guidelines); 9 ft ceiling height.',
+          uncertainty: 'Actual clean-air delivery depends on air cleaner placement, fan speed, filter loading, and room envelope leakage.',
           category: 'INDOOR_PURIFICATION',
           priority: 'HIGH',
           timeOfDay: 'ALL_DAY',
@@ -218,7 +217,7 @@ export const deterministicFallbackEngine = {
             `Run your True HEPA filter continuously on medium-high speed (target ${house.requiredCADR_CFM ?? 200} CFM).`,
             'Avoid indoor combustion sources (incense sticks, mosquito coils, unventilated frying).',
           ],
-          disclaimer: 'Indoor filtration standard per EPA/CDC guidelines.',
+          disclaimer: 'Guidance based on AHAM CADR sizing criteria and CDC Clean Air in Buildings Challenge recommendations. Not a universal legal mandate.',
           evidenceStrength: hasData ? 'MEASURED_OBSERVATION' : 'PRECAUTIONARY_GUIDELINE',
           provenance: 'PRE_REVIEWED_RULE',
         });
@@ -463,11 +462,11 @@ export const deterministicFallbackEngine = {
     if (!cadr.isCurrentPurifierAdequate) {
       recommendations.push({
         action: `Upgrade or Augment HEPA Filtration by ${cadr.deficitCADR_CFM} CFM`,
-        reason: `Your room volume (${cadr.roomVolumeCuFt} cu ft) requires at least ${cadr.requiredCADR_CFM} CFM (Clean Air Delivery Rate) to achieve 5.0 Air Changes per Hour for wildfire and severe winter smog protection.`,
-        expectedBenefit: `Achieves acute 5.0 ACH filtration, clearing 99.97% of fine airborne particulate matter within 30-45 minutes.`,
-        measurableImpact: `Current capacity: ${input.purifierCADR || 0} CFM. Deficit to close: ${cadr.deficitCADR_CFM} CFM (${Math.round(cadr.deficitCADR_CFM * 1.699)} m³/h).`,
-        assumptions: 'Target 5.0 ACH recommended by EPA/CDC for residential particulate defense; ceiling height 9 ft.',
-        uncertainty: 'Room leakage and internal doors affect effective room volume.',
+        reason: `Your room volume (${cadr.roomVolumeCuFt} cu ft) requires at least ${cadr.requiredCADR_CFM} CFM (${cadr.requiredCADR_M3H} m³/h) to achieve a 5.0 Air Changes per Hour (ACH) design target for acute particulate mitigation.`,
+        expectedBenefit: `Accelerates indoor airborne fine particulate clearance during acute ambient smog episodes.`,
+        measurableImpact: `Current rated capacity: ${input.purifierCADR || 0} CFM. Deficit to close: ${cadr.deficitCADR_CFM} CFM (${Math.round(cadr.deficitCADR_CFM * 1.69901)} m³/h).`,
+        assumptions: 'Selected 5.0 ACH design target for acute particulate/smoke mitigation (referenced in CDC / AHAM CADR guidelines); room volume ' + cadr.roomVolumeCuFt + ' cu ft.',
+        uncertainty: 'Real-world clean-air delivery varies with fan speed setting, filter dust loading, and room air mixing.',
         category: 'INDOOR_PURIFICATION',
         priority: 'HIGH',
         timeOfDay: 'ALL_DAY',
@@ -476,14 +475,14 @@ export const deterministicFallbackEngine = {
           'Place purifier centrally away from walls and curtains to maximize 360-degree intake circulation.',
           'Operate purifier on medium-high speed during periods of active room occupancy.',
         ],
-        disclaimer: 'ASHRAE / AHAM Verifide CADR sizing criteria.',
+        disclaimer: 'Calculated using AHAM CADR sizing criteria with a 5.0 ACH particulate mitigation design target. 5.0 ACH is an engineering design target, not a universal legal mandate.',
         evidenceStrength: 'ESTIMATED_MODEL',
         provenance: 'CALCULATED_ESTIMATE',
       });
     } else {
       recommendations.push({
         action: 'Maintain Current HEPA Purifier Operating Schedule',
-        reason: `Your current purifier capacity (${input.purifierCADR} CFM) meets the required ${cadr.requiredCADR_CFM} CFM for 5.0 Air Changes per Hour in this space.`,
+        reason: `Your current purifier capacity (${input.purifierCADR} CFM) meets the required ${cadr.requiredCADR_CFM} CFM for a 5.0 Air Changes per Hour design target in this space.`,
         expectedBenefit: 'Maintains clean indoor air baseline and prevents particulate buildup.',
         measurableImpact: `Provides ${cadr.actualACHWithCurrentPurifier} ACH (target 5.0 ACH).`,
         assumptions: 'Filter is clean and within manufacturer replacement intervals.',
@@ -495,7 +494,7 @@ export const deterministicFallbackEngine = {
           'Inspect pre-filter monthly and vacuum lint/hair buildup.',
           'Replace H13 True HEPA filter cartridge every 6 to 12 months depending on ambient smog density.',
         ],
-        disclaimer: 'AHAM residential air cleaner sizing standard.',
+        disclaimer: 'Calculated using AHAM CADR sizing criteria with a 5.0 ACH particulate mitigation design target.',
         evidenceStrength: 'ESTIMATED_MODEL',
         provenance: 'CALCULATED_ESTIMATE',
       });
@@ -556,7 +555,7 @@ export const deterministicFallbackEngine = {
       },
       generatedAt: new Date().toISOString(),
       disclaimer:
-        'Indoor air recommendations calculated using ASHRAE 62.2 / EPA 5.0 ACH algorithms. Mechanical HEPA filtration is essential for particulate defense.',
+        'Indoor air calculations use AHAM CADR volumetric formulas with a 5.0 ACH acute particulate mitigation design target. Mechanical HEPA filtration is essential for particulate defense.',
     };
   },
 };

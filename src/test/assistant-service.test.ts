@@ -14,6 +14,7 @@ import { deterministicFallbackEngine } from '@/lib/ai/deterministic-fallback';
 import { structuredRecommendationSchema, assistantChatResponseSchema } from '@/lib/validations/assistant.schema';
 import { airQualityRepository } from '@/repositories/air-quality.repository';
 import { recommendationRepository } from '@/repositories/recommendation.repository';
+import { householdService } from '@/services/household.service';
 
 describe('BreatheWise AI — Module 5 Assistant & Recommendations Suite', () => {
   const userA = { id: 'usr_m5_test_a_001', email: 'userA_m5@breathewise.test', role: 'USER' };
@@ -246,6 +247,37 @@ describe('BreatheWise AI — Module 5 Assistant & Recommendations Suite', () => 
       expect(advice.scientificNotices.plantMythDebunked).toContain('produce negligible Clean Air Delivery Rates');
       expect(advice.recommendations.length).toBeGreaterThan(0);
     });
+
+    it('enforces physical bounds on zero, negative, and extreme dimensions', () => {
+      // Zero dimensions should be safely clamped to minimum physical room dimensions (10 sq ft, 5 ft height)
+      const zeroResult = householdService.calculateCadrRequirements(0, 0, null, 5.0);
+      expect(zeroResult.roomVolumeCuFt).toBe(50); // 10 sq ft * 5 ft
+      expect(zeroResult.requiredCADR_CFM).toBe(4); // 50 * 5 / 60 = 4.16 -> 4 CFM
+      expect(zeroResult.requiredCADR_M3H).toBe(7); // 4 * 1.69901 = 6.79 -> 7 m3/h
+
+      // Negative dimensions clamped
+      const negResult = householdService.calculateCadrRequirements(-200, -9, -50, 5.0);
+      expect(negResult.roomVolumeCuFt).toBe(50);
+      expect(negResult.deficitCADR_CFM).toBe(4);
+
+      // Extreme dimensions clamped to maximum reasonable residential bounds (10,000 sq ft, 30 ft height)
+      const extremeResult = householdService.calculateCadrRequirements(500000, 100, 10000, 5.0);
+      expect(extremeResult.roomVolumeCuFt).toBe(300000); // 10,000 * 30
+      expect(extremeResult.requiredCADR_CFM).toBe(25000); // 300,000 * 5 / 60
+    });
+
+    it('correctly calculates CADR in both CFM and m³/h with exact conversion ratio', () => {
+      // 200 sq ft, 9 ft height, 5.0 ACH:
+      // Volume = 1800 cu ft
+      // Target CADR CFM = 1800 * 5 / 60 = 150 CFM
+      // Target CADR m3/h = 150 * 1.69901 = 254.85 -> 255 m3/h
+      const result = householdService.calculateCadrRequirements(200, 9, 100, 5.0);
+      expect(result.roomVolumeCuFt).toBe(1800);
+      expect(result.requiredCADR_CFM).toBe(150);
+      expect(result.requiredCADR_M3H).toBe(255);
+      expect(result.standardsNote).toContain('engineering design target');
+      expect(result.standardsNote).toContain('not a universal legal mandate');
+    });
   });
 
   // =========================================================================
@@ -319,6 +351,41 @@ describe('BreatheWise AI — Module 5 Assistant & Recommendations Suite', () => 
       expect(response.recommendations[0].action).toContain('Metro');
       expect(response.recommendations[0].expectedBenefit).toContain('64%');
       expect(response.recommendations[0].measurableImpact).toContain('0.136 kg CO2e');
+    });
+
+    it('does not advise emergency 112 medical triage merely because AQI is severe (>400) without symptoms', async () => {
+      const context = await buildAssistantContext(userA.id);
+      context.environment.status = 'AVAILABLE';
+      context.environment.aqi = 425;
+      context.environment.category = 'SEVERE';
+
+      const response = deterministicFallbackEngine.generateChatResponse(
+        'Can I go for a walk outside right now?',
+        context
+      );
+
+      // Should advise canceling outdoor exercise and remaining indoors
+      expect(response.recommendations[0].action).toContain('Cancel Outdoor Exercise');
+      // Should NOT make primary action calling 112 emergency medical triage unless acute symptoms occur
+      expect(response.recommendations[0].action).not.toContain('Seek Immediate Emergency Medical Attention');
+      expect(response.reply).not.toContain('CRITICAL HEALTH ALERT');
+    });
+
+    it('discloses respirator particulate filtration vs gaseous pollutant limitations', async () => {
+      const context = await buildAssistantContext(userA.id);
+      context.environment.status = 'AVAILABLE';
+      context.environment.aqi = 340;
+      context.environment.category = 'VERY_POOR';
+
+      const response = deterministicFallbackEngine.generateChatResponse(
+        'Should I go jogging or stay outside?',
+        context
+      );
+
+      const steps = response.recommendations[0].implementationSteps.join(' ');
+      expect(steps).toContain('N95');
+      expect(steps).toContain('airtight seal');
+      expect(steps).toContain('do not filter combustion gases');
     });
   });
 

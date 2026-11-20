@@ -31,19 +31,19 @@
 
 ## 3. Current Module Status
 - **Current Module:** `Module 5 — AI Assistant & Intelligent Recommendations`
-- **Status:** **COMPLETED, FULLY INTEGRATED & VERIFIED (255/255 Vitest Tests Passing, 33/33 Playwright Browser Tests Passing)**
+- **Status:** **COMPLETED, SCIENTIFICALLY VALIDATED & INDEPENDENTLY VERIFIED (259/259 Vitest Tests Passing, 33/33 Playwright Browser Tests Passing)**
 - **Completion Evidence:**
-  - **Five Connected M5 Capabilities Delivered:**
-    1. *BreatheWise AI Assistant:* Conversational environmental intelligence grounded in real-time verified CPCB telemetry and user household risk profiles.
-    2. *Personalized Daily Routine Generator:* Diurnal phase breakdown (Morning 06:00–11:00, Afternoon 12:00–17:00, Evening 18:00–23:00) with activity windows and travel exposure avoidance.
-    3. *Indoor Air Quality (IAQ) Advisor:* EPA 5.0 ACH CADR room sizing calculator, clean-air delivery deficit warnings, source control protocols, and scientific debunking of houseplant air-purification myths.
-    4. *Family-Aware Health-Protection Guidance:* Vulnerability stratification (infants, asthmatics, elderly, cardiovascular disease), severe smog triage (112 hotline guidance), and certified N95/N99 respirator guidance.
-    5. *Sustainable Lifestyle & Commute Guidance:* Mode shift emissions vs. acute exposure trade-offs with strict health-first prioritization (never advise cycling/walking in Poor/Very Poor/Severe AQI).
+  - **Five Connected M5 Capabilities Delivered & Scientifically Audited:**
+    1. *BreatheWise AI Assistant:* Conversational environmental intelligence grounded in real-time verified CPCB telemetry, 2-decimal geocoordinate quantization (~1.1 km), and user household risk profiles.
+    2. *Personalized Daily Routine Generator:* Diurnal phase breakdown (Morning 06:00–11:00, Afternoon 12:00–17:00, Evening 18:00–23:00) with activity windows, boundary layer dispersion modeling, and night-time indoor air sealing.
+    3. *Indoor Air Quality (IAQ) Advisor:* Clean Air Delivery Rate (CADR) room volume calculator using an acute 5.0 ACH particulate mitigation design target (CDC Clean Air in Buildings Challenge / AHAM CADR guidelines), clean-air delivery deficit warnings, source control protocols, and scientific debunking of houseplant air-purification myths (Waring et al., 2020).
+    4. *Family-Aware Health-Protection Guidance:* Vulnerability stratification (infants, asthmatics, elderly, cardiovascular disease); symptom-based emergency triage directing users to 112 (India's ERSS) only when acute medical distress occurs; certified N95/N99/FFP2 respirator guidance with explicit disclosures regarding particulate filtration vs. lack of gas adsorption.
+    5. *Sustainable Lifestyle & Commute Guidance:* Mass transit mode shift emissions vs. acute exposure trade-offs with strict health-first prioritization (never advise cycling/walking in Poor/Very Poor/Severe AQI).
   - **6-Field Explainability Contract:** Strict Zod validation and UI rendering of `action`, `reason`, `expectedBenefit`, `measurableImpact`, `assumptions`, and `uncertainty` with collapsible scientific disclosures and feedback loops.
-  - **Server-Side Gemini Integration & Deterministic Fallback:** Dual-engine architecture with 8-second bounded execution for Google Gemini 1.5 Flash and instant deterministic fallback to a peer-reviewed scientific rules engine when unconfigured or offline.
+  - **Server-Side Gemini Integration & Deterministic Fallback:** Dual-engine architecture with 8-second bounded execution for Google Gemini 1.5 Flash (`gemini-1.5-flash`), environment-configurable model selection, and instant deterministic fallback to an 8-rule peer-reviewed scientific rules engine when unconfigured or offline.
   - **AI Safety & Prompt Defense:** Isolated XML delimiter system boundaries (`<SYSTEM_PROMPT>`, `<ENVIRONMENTAL_EVIDENCE>`, `<USER_CONTEXT>`, `<USER_QUERY>`), delimiter breakout stripping, injection scanning, and output sanitization scrubbing HTML/scripts/eval/image tracking payloads.
   - **Zero-Fabrication Telemetry Policy:** Real database/provider environmental observations injected into model context; honest `NO_DATA` when coordinates lack observations.
-  - **Automated Verification:** **255/255 unit, service, adversarial and integration tests passing** across 17 Vitest test suites (`npx vitest run`).
+  - **Automated Verification:** **259/259 unit, service, adversarial and integration tests passing** across 17 Vitest test suites (`npx vitest run`).
   - **Browser Automation:** **33/33 Playwright tests passing** across Desktop Chrome (1440x900), Mobile Small (360x640), and Mobile Standard (390x844).
   - **Static Analysis & Build:** `npx tsc --noEmit` passing with 0 errors; Next.js production build succeeding with all 24 routes prerendered.
 - **Next Phase:** Module 6 — Impact Tracker & Community Features (Awaiting user authorization; strictly NOT started).

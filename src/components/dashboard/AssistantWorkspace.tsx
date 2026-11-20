@@ -487,9 +487,9 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
                 </div>
 
                 <div className="p-2.5 bg-[#F7F8F3] rounded-lg border border-[#E2E8DE] space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-[#68766C]">Filtration Benchmark:</span>
+                  <span className="text-[10px] uppercase font-bold text-[#68766C]">Filtration Design Target:</span>
                   <p className="text-[#27352D]">
-                    US EPA / CDC 5.0 Air Changes per Hour (ACH) for acute particulate mitigation.
+                    5.0 Air Changes per Hour (ACH) design target for acute particulate mitigation (CDC / AHAM CADR).
                   </p>
                 </div>
               </CardContent>
@@ -763,7 +763,7 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
                           : `Deficit: ${indoorReport.cadrAnalysis.deficitCADR_CFM} CFM`}
                       </Badge>
                     </div>
-                    <span className="text-[10px] text-[#68766C]">EPA/CDC wildfire threshold</span>
+                    <span className="text-[10px] text-[#68766C]">5.0 ACH design target</span>
                   </div>
                 </div>
 
