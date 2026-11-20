@@ -11,6 +11,7 @@ export interface ModalProps {
   description?: string;
   children: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 export function Modal({
@@ -19,7 +20,8 @@ export function Modal({
   title,
   description,
   children,
-  maxWidth = 'md',
+  maxWidth,
+  size,
 }: ModalProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -48,6 +50,8 @@ export function Modal({
     xl: 'max-w-4xl',
   };
 
+  const resolvedSize = size || maxWidth || 'md';
+
   return (
     <div
       role="dialog"
@@ -60,7 +64,7 @@ export function Modal({
       <div
         className={cn(
           'relative w-full bg-white rounded-[14px] border border-[#E2E8DE] shadow-[0_12px_36px_rgba(39,53,45,0.12)] p-6 transition-all',
-          maxWidths[maxWidth]
+          maxWidths[resolvedSize]
         )}
         onClick={(e) => e.stopPropagation()}
       >

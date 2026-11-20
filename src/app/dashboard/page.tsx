@@ -1,321 +1,1033 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Container } from '@/components/layout/Container';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Alert } from '@/components/ui/Alert';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
-import { AqiOverview } from '@/components/dashboard/AqiOverview';
-import { PollutantCard } from '@/components/dashboard/PollutantCard';
-import { TrendChart, TrendDataPoint } from '@/components/dashboard/TrendChart';
-import { ExplainableRecommendationCard } from '@/components/dashboard/ExplainableRecommendationCard';
-import { RoutineCard } from '@/components/dashboard/RoutineCard';
-import { ImpactMetricCard } from '@/components/dashboard/ImpactMetricCard';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/Card';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Modal } from '@/components/ui/Modal';
+import { Spinner } from '@/components/ui/Spinner';
+import { EmptyState } from '@/components/ui/EmptyState';
 import {
   Wind,
-  ShieldAlert,
+  ShieldCheck,
   Home,
-  Flame,
-  Radio,
+  User,
+  LogOut,
   Sparkles,
   Info,
   Calendar,
   Layers,
-  ArrowRight,
-  Filter,
   CheckCircle2,
   AlertTriangle,
+  Plus,
+  Route,
+  Activity,
+  Settings,
+  ChevronRight,
+  TrendingDown,
+  Gauge,
+  MapPin,
+  RefreshCw,
 } from 'lucide-react';
 
-export default function DashboardPage() {
-  // Sample fixture data for M1 visual foundation
-  const sampleTrendData: TrendDataPoint[] = [
-    { hour: '00:00', aqi: 195, pm25: 145 },
-    { hour: '03:00', aqi: 220, pm25: 170 },
-    { hour: '06:00', aqi: 275, pm25: 225 }, // Nocturnal inversion peak
-    { hour: '08:00', aqi: 290, pm25: 240 },
-    { hour: '11:00', aqi: 210, pm25: 160 },
-    { hour: '13:00', aqi: 135, pm25: 50, isVentilationWindow: true }, // Diurnal minimum
-    { hour: '15:00', aqi: 140, pm25: 55, isVentilationWindow: true }, // Diurnal minimum
-    { hour: '18:00', aqi: 215, pm25: 165 },
-    { hour: '21:00', aqi: 250, pm25: 200 },
-  ];
+interface SessionUser {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string;
+}
 
-  const [activeTab, setActiveTab] = useState<'all' | 'indoor' | 'routines' | 'impact'>('all');
+interface HouseholdData {
+  profile: {
+    id: string;
+    city: string;
+    neighborhood?: string;
+    homeType: string;
+    floorAreaSqFt: number;
+    ceilingHeightFt: number;
+    hasHEPAFilter: boolean;
+    hepaCADR?: number | null;
+    windowSealing: string;
+    primaryCookingFuel: string;
+    members: Array<{
+      id: string;
+      nameOrAlias: string;
+      ageGroup: string;
+      hasAsthma: boolean;
+      hasHeartCondition: boolean;
+      isPregnant: boolean;
+    }>;
+  };
+  cadrAnalysis: {
+    roomVolumeCuFt: number;
+    targetACH: number;
+    requiredCADR_CFM: number;
+    requiredCADR_M3H: number;
+    isCurrentPurifierAdequate: boolean;
+    actualACHWithCurrentPurifier: number | null;
+    deficitCADR_CFM: number;
+    scientificPlantNotice: string;
+    standardsNote: string;
+  };
+  vulnerabilityAssessment: {
+    tier: string;
+    label: string;
+    targetACH: number;
+    indoorPM25Target: number;
+  };
+}
+
+export default function DashboardPage() {
+  const router = useRouter();
+
+  // Authentication State
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Dashboard Data States
+  const [household, setHousehold] = useState<HouseholdData | null>(null);
+  const [loadingHousehold, setLoadingHousehold] = useState(true);
+  const [routines, setRoutines] = useState<any[]>([]);
+  const [impactLogs, setImpactLogs] = useState<any[]>([]);
+  const [impactAggregates, setImpactAggregates] = useState<{
+    totalCO2AvoidedKg: number;
+    totalPM25AvoidedGrams: number;
+    totalDistanceShiftedKm: number;
+    totalLogsCount: number;
+  } | null>(null);
+  const [aqiCache, setAqiCache] = useState<any>(null);
+
+  // Active view tab
+  const [activeTab, setActiveTab] = useState<'overview' | 'household' | 'routines' | 'impact' | 'settings'>('overview');
+
+  // Household Setup Form State
+  const [setupModalOpen, setSetupModalOpen] = useState(false);
+  const [setupForm, setSetupForm] = useState({
+    city: 'Delhi',
+    neighborhood: '',
+    homeType: 'APARTMENT',
+    floorAreaSqFt: '1000',
+    ceilingHeightFt: '9.0',
+    hasHEPAFilter: true,
+    hepaCADR: '200',
+    windowSealing: 'MODERATE',
+    primaryCookingFuel: 'LPG_GAS',
+    hasAsthmaticMember: false,
+    hasInfantOrPregnant: false,
+  });
+  const [savingHousehold, setSavingHousehold] = useState(false);
+  const [householdError, setHouseholdError] = useState<string | null>(null);
+
+  // Routine Creation Modal State
+  const [routineModalOpen, setRoutineModalOpen] = useState(false);
+  const [routineForm, setRoutineForm] = useState({
+    title: 'Daily Commute',
+    origin: 'Home',
+    destination: 'Office',
+    distanceKm: '12.0',
+    departureTime: '08:30',
+    baselineMode: 'SOLO_CAR',
+    optimizedMode: 'METRO',
+  });
+  const [savingRoutine, setSavingRoutine] = useState(false);
+
+  // 1. Initial Authentication Guard Check
+  useEffect(() => {
+    async function verifyAuthAndFetch() {
+      try {
+        const res = await fetch('/api/auth/session', { cache: 'no-store' });
+        const json = await res.json();
+
+        if (!res.ok || !json?.data?.authenticated || !json?.data?.user) {
+          // Unauthenticated -> Redirect to login with returnUrl
+          router.replace('/login?returnUrl=/dashboard');
+          return;
+        }
+
+        setUser(json.data.user);
+        setAuthLoading(false);
+
+        // Fetch user data in parallel
+        fetchHouseholdData();
+        fetchRoutinesData();
+        fetchImpactData();
+        fetchAqiData();
+      } catch {
+        router.replace('/login?returnUrl=/dashboard');
+      }
+    }
+
+    verifyAuthAndFetch();
+  }, [router]);
+
+  const fetchHouseholdData = async () => {
+    setLoadingHousehold(true);
+    try {
+      const res = await fetch('/api/household');
+      if (res.ok) {
+        const json = await res.json();
+        setHousehold(json.data);
+      } else {
+        setHousehold(null);
+      }
+    } catch {
+      setHousehold(null);
+    } finally {
+      setLoadingHousehold(false);
+    }
+  };
+
+  const fetchRoutinesData = async () => {
+    try {
+      const res = await fetch('/api/routines');
+      if (res.ok) {
+        const json = await res.json();
+        setRoutines(json.data.routines || []);
+      }
+    } catch {}
+  };
+
+  const fetchImpactData = async () => {
+    try {
+      const res = await fetch('/api/impact');
+      if (res.ok) {
+        const json = await res.json();
+        setImpactLogs(json.data.logs || []);
+        setImpactAggregates(json.data.aggregates || null);
+      }
+    } catch {}
+  };
+
+  const fetchAqiData = async () => {
+    try {
+      const res = await fetch('/api/aqi?lat=28.61&lon=77.20');
+      if (res.ok) {
+        const json = await res.json();
+        setAqiCache(json.data);
+      }
+    } catch {}
+  };
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/');
+    router.refresh();
+  };
+
+  const handleSaveHousehold = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingHousehold(true);
+    setHouseholdError(null);
+
+    try {
+      const members = [];
+      if (setupForm.hasAsthmaticMember) {
+        members.push({
+          nameOrAlias: 'Vulnerable Family Member',
+          ageGroup: 'ADULT',
+          hasAsthma: true,
+          hasHeartCondition: false,
+          isPregnant: false,
+          outdoorHoursPerDay: 1.0,
+        });
+      }
+      if (setupForm.hasInfantOrPregnant) {
+        members.push({
+          nameOrAlias: 'Pediatric / Maternal',
+          ageGroup: 'INFANT',
+          hasAsthma: false,
+          hasHeartCondition: false,
+          isPregnant: true,
+          outdoorHoursPerDay: 0.5,
+        });
+      }
+
+      const payload = {
+        city: setupForm.city,
+        neighborhood: setupForm.neighborhood || undefined,
+        latitude: 28.6139,
+        longitude: 77.209,
+        homeType: setupForm.homeType,
+        floorAreaSqFt: Number(setupForm.floorAreaSqFt),
+        ceilingHeightFt: Number(setupForm.ceilingHeightFt),
+        hasHEPAFilter: setupForm.hasHEPAFilter,
+        hepaCADR: setupForm.hasHEPAFilter ? Number(setupForm.hepaCADR) : null,
+        windowSealing: setupForm.windowSealing,
+        primaryCookingFuel: setupForm.primaryCookingFuel,
+        members,
+      };
+
+      const res = await fetch('/api/household', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json();
+        setHouseholdError(errJson?.error?.message || 'Failed to save household profile.');
+        setSavingHousehold(false);
+        return;
+      }
+
+      setSetupModalOpen(false);
+      await fetchHouseholdData();
+    } catch {
+      setHouseholdError('A network error occurred while saving.');
+    } finally {
+      setSavingHousehold(false);
+    }
+  };
+
+  const handleCreateRoutine = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingRoutine(true);
+    try {
+      const res = await fetch('/api/routines', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: routineForm.title,
+          origin: routineForm.origin,
+          destination: routineForm.destination,
+          distanceKm: Number(routineForm.distanceKm),
+          departureTime: routineForm.departureTime,
+          baselineMode: routineForm.baselineMode,
+          optimizedMode: routineForm.optimizedMode,
+        }),
+      });
+
+      if (res.ok) {
+        setRoutineModalOpen(false);
+        await fetchRoutinesData();
+      }
+    } finally {
+      setSavingRoutine(false);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="py-24 bg-[#F7F8F3] min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Spinner size="lg" className="text-[#397A55]" />
+          <p className="text-sm font-medium text-[#68766C]">Verifying secure session...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="py-8 lg:py-12 bg-[#F7F8F3] min-h-screen">
       <Container size="wide" className="space-y-8">
-        {/* Dashboard Header Bar */}
+        {/* Top Header Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#E2E8DE]">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Badge variant="accent" size="sm">
-                M1 Visual Foundation
+            <div className="flex items-center gap-2 mb-1.5">
+              <Badge variant="success" size="sm">
+                Verified Account
               </Badge>
-              <span className="text-xs text-[#68766C]">Verified Design System Shell</span>
+              <span className="text-xs text-[#68766C]">Server-side authenticated session</span>
             </div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-[#27352D] font-[var(--font-heading)]">
-              Air Quality & Household Defense Radar
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#27352D] font-[var(--font-heading)]">
+              Welcome back, {user?.name || user?.email.split('@')[0]}
             </h1>
-            <p className="text-sm text-[#68766C] mt-1">
-              Comprehensive environmental intelligence dashboard tailored for severe urban winter smog navigation.
+            <p className="text-sm text-[#68766C] mt-0.5">
+              Account: <span className="font-mono text-xs">{user?.email}</span>
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="px-3 py-1.5 rounded-[8px] bg-white border border-[#E2E8DE] text-xs text-[#27352D] font-medium flex items-center gap-1.5 shadow-2xs">
-              <span className="w-2 h-2 rounded-full bg-[#287A4B] animate-pulse"></span>
-              <span>Sample Station: Anand Vihar / Central Delhi</span>
-            </div>
-            <Badge variant="secondary" size="md">
-              Dev Fixtures Active
-            </Badge>
-          </div>
-        </div>
-
-        {/* 10. Pollution Alert Banner */}
-        <Alert
-          variant="warning"
-          title="Acute Smog Emergency Warning (PM2.5 > 180 µg/m³)"
-        >
-          Ground-level thermal inversion active across urban basin. Sensitive groups (infants, asthmatics, seniors) must keep windows sealed until the 13:00 diurnal mixing window. Run indoor HEPA purifiers on continuous medium/high.
-        </Alert>
-
-        {/* 1. Air Quality Overview Card */}
-        <AqiOverview
-          aqi={265}
-          category="veryUnhealthy"
-          dominantPollutant="PM2.5"
-          city="Delhi NCR / Anand Vihar Station"
-          stationName="CPCB Monitoring Station #DL014"
-          stationDistanceKm={1.8}
-          lastUpdated="Today, 08:30 IST (15 mins ago)"
-          isSampleFixture={true}
-        />
-
-        {/* 2. Pollutant Measurement Cards */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-[#27352D] font-[var(--font-heading)] flex items-center gap-2">
-              <Wind className="w-5 h-5 text-[#397A55]" />
-              Measured Particulate & Gas Telemetry
-            </h3>
-            <span className="text-xs text-[#68766C]">Standardized Units: µg/m³ & ppm</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <PollutantCard
-              name="Fine Particulates"
-              chemicalFormula="PM2.5"
-              value={214.8}
-              unit="µg/m³"
-              standardLimit={15}
-              status="hazardous"
-              description="Microscopic particles penetrating deep into bronchial passages and bloodstream."
-            />
-            <PollutantCard
-              name="Coarse Dust"
-              chemicalFormula="PM10"
-              value={328.2}
-              unit="µg/m³"
-              standardLimit={45}
-              status="hazardous"
-              description="Inhalable dust from construction, road abrasion, and regional topsoil movement."
-            />
-            <PollutantCard
-              name="Nitrogen Dioxide"
-              chemicalFormula="NO₂"
-              value={68.4}
-              unit="µg/m³"
-              standardLimit={25}
-              status="unhealthy"
-              description="Pungent combustion gas generated by heavy vehicle diesel exhaust and thermal plants."
-            />
-            <PollutantCard
-              name="Ground Ozone"
-              chemicalFormula="O₃"
-              value={42.1}
-              unit="µg/m³"
-              standardLimit={100}
-              status="good"
-              description="Photochemical oxidant formed by sunlight reacting with volatile organic emissions."
-            />
-          </div>
-        </div>
-
-        {/* 4. Historical Trend & Diurnal Ventilation Window Chart */}
-        <TrendChart data={sampleTrendData} />
-
-        {/* Navigation Filter Tabs for Guidance Sections */}
-        <div className="flex items-center gap-2 border-b border-[#E2E8DE] pb-2 overflow-x-auto">
-          {[
-            { id: 'all', label: 'All Recommendations' },
-            { id: 'indoor', label: 'Indoor Air & CADR' },
-            { id: 'routines', label: 'Commute & Travel' },
-            { id: 'impact', label: 'Impact Accounting' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`px-4 py-2 text-xs font-semibold rounded-[8px] transition-colors whitespace-nowrap cursor-pointer ${
-                activeTab === tab.id
-                  ? 'bg-[#397A55] text-white shadow-2xs'
-                  : 'bg-white text-[#27352D] border border-[#E2E8DE] hover:bg-[#F7F8F3]'
-              }`}
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogout}
+              leftIcon={<LogOut className="w-3.5 h-3.5 text-[#B8423D]" />}
+              className="text-[#B8423D] border-[#E2E8DE]"
             >
-              {tab.label}
-            </button>
-          ))}
+              Sign Out
+            </Button>
+          </div>
         </div>
 
-        {/* 5. Explainable Recommendation Cards & 7. Indoor Air Tips */}
-        {(activeTab === 'all' || activeTab === 'indoor') && (
-          <div className="space-y-4">
+        {/* Dashboard Navigation Tabs */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-[#E2E8DE]">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
+              activeTab === 'overview'
+                ? 'bg-[#397A55] text-white shadow-sm'
+                : 'text-[#27352D] hover:bg-[#EEF3EA]'
+            }`}
+          >
+            <Gauge className="w-4 h-4" />
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('household')}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
+              activeTab === 'household'
+                ? 'bg-[#397A55] text-white shadow-sm'
+                : 'text-[#27352D] hover:bg-[#EEF3EA]'
+            }`}
+          >
+            <Home className="w-4 h-4" />
+            Household Profile & CADR
+          </button>
+          <button
+            onClick={() => setActiveTab('routines')}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
+              activeTab === 'routines'
+                ? 'bg-[#397A55] text-white shadow-sm'
+                : 'text-[#27352D] hover:bg-[#EEF3EA]'
+            }`}
+          >
+            <Route className="w-4 h-4" />
+            Commute Routines ({routines.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('impact')}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
+              activeTab === 'impact'
+                ? 'bg-[#397A55] text-white shadow-sm'
+                : 'text-[#27352D] hover:bg-[#EEF3EA]'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            Impact Records ({impactLogs.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
+              activeTab === 'settings'
+                ? 'bg-[#397A55] text-white shadow-sm'
+                : 'text-[#27352D] hover:bg-[#EEF3EA]'
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            Account & Privacy
+          </button>
+        </div>
+
+        {/* Tab 1: Overview */}
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            {/* Household Setup Prompt or Active Status */}
+            {!household ? (
+              <div className="p-6 bg-white border border-[#D69B47]/30 rounded-xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-[#A86B16] font-semibold text-sm">
+                    <AlertTriangle className="w-4 h-4" />
+                    Household Configuration Required
+                  </div>
+                  <h3 className="text-lg font-bold text-[#27352D]">
+                    Configure your home specifications to unlock personalized air filtration guidance.
+                  </h3>
+                  <p className="text-xs text-[#68766C] max-w-xl">
+                    BreatheWise AI requires your room dimensions and window sealing characteristics to compute exact CADR clean air requirements.
+                  </p>
+                </div>
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={() => setSetupModalOpen(true)}
+                  leftIcon={<Plus className="w-4 h-4" />}
+                >
+                  Configure Household Now
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="bg-white border-[#E2E8DE]">
+                  <CardContent className="p-5 space-y-2">
+                    <span className="text-xs font-semibold text-[#68766C]">Clean Air Delivery Rate</span>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-extrabold text-[#27352D] font-[var(--font-heading)]">
+                        {household.cadrAnalysis.requiredCADR_CFM}
+                      </span>
+                      <span className="text-xs font-medium text-[#68766C]">CFM required</span>
+                    </div>
+                    <Badge variant={household.cadrAnalysis.isCurrentPurifierAdequate ? 'success' : 'warning'} size="sm">
+                      {household.cadrAnalysis.isCurrentPurifierAdequate ? 'Purifier Capacity Adequate' : `Deficit: ${household.cadrAnalysis.deficitCADR_CFM} CFM`}
+                    </Badge>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white border-[#E2E8DE]">
+                  <CardContent className="p-5 space-y-2">
+                    <span className="text-xs font-semibold text-[#68766C]">Family Vulnerability Tier</span>
+                    <div className="text-xl font-bold text-[#27352D] font-[var(--font-heading)]">
+                      {household.vulnerabilityAssessment.label}
+                    </div>
+                    <p className="text-xs text-[#397A55] font-medium">
+                      Indoor Target: &lt;{household.vulnerabilityAssessment.indoorPM25Target} µg/m³ PM2.5
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white border-[#E2E8DE]">
+                  <CardContent className="p-5 space-y-2">
+                    <span className="text-xs font-semibold text-[#68766C]">Persisted Commute Routines</span>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-extrabold text-[#27352D] font-[var(--font-heading)]">
+                        {routines.length}
+                      </span>
+                      <span className="text-xs font-medium text-[#68766C]">saved pathways</span>
+                    </div>
+                    <p className="text-xs text-[#68766C]">
+                      {impactAggregates ? `${impactAggregates.totalCO2AvoidedKg} kg CO2e saved to date` : 'No impact records yet'}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* Air Quality Telemetry Status (Honest M3 Boundary Disclosure) */}
+            <Card className="bg-white border-[#E2E8DE]">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Wind className="w-5 h-5 text-[#397A55]" />
+                    <CardTitle className="text-lg">Atmospheric Telemetry Radar</CardTitle>
+                  </div>
+                  <Badge variant="secondary" size="sm">
+                    M4 Engine Deferred
+                  </Badge>
+                </div>
+                <CardDescription>
+                  Verified real-time atmospheric station data from SQLite telemetry cache.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {aqiCache?.isLiveExternalFeed === false && aqiCache?.aqi ? (
+                  <div className="p-4 bg-[#F7F8F3] rounded-lg space-y-2 border border-[#E2E8DE]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-[#27352D]">{aqiCache.stationName || 'Regional Telemetry Cache'}</span>
+                      <Badge variant="accent" size="sm">AQI {aqiCache.aqi} — {aqiCache.category}</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-xs">
+                      <div className="p-2 bg-white rounded border border-[#E2E8DE]">PM2.5: {aqiCache.pollutants?.pm25?.value} µg/m³</div>
+                      <div className="p-2 bg-white rounded border border-[#E2E8DE]">PM10: {aqiCache.pollutants?.pm10?.value} µg/m³</div>
+                      <div className="p-2 bg-white rounded border border-[#E2E8DE]">NO2: {aqiCache.pollutants?.no2?.value} µg/m³</div>
+                      <div className="p-2 bg-white rounded border border-[#E2E8DE]">Dominant: {aqiCache.dominantPollutant}</div>
+                    </div>
+                    <p className="text-[11px] text-[#68766C] pt-1">
+                      {aqiCache.provenanceNotice || 'Cached atmospheric record.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-6 text-center bg-[#EEF3EA] rounded-lg space-y-2 border border-[#E2E8DE]">
+                    <MapPin className="w-6 h-6 text-[#397A55] mx-auto" />
+                    <h4 className="text-sm font-bold text-[#27352D]">Ready for Module M4 Telemetry Integration</h4>
+                    <p className="text-xs text-[#68766C] max-w-lg mx-auto">
+                      Live OpenAQ v3, Copernicus CAMS dispersion modeling, and CPCB government sensor pipelines will activate in Module M4. BreatheWise AI never displays fabricated mock AQI numbers.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Tab 2: Household Profile & CADR */}
+        {activeTab === 'household' && (
+          <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-bold text-[#27352D] font-[var(--font-heading)]">
-                  Personalized Family & Indoor Guidance
-                </h3>
+                <h2 className="text-xl font-bold text-[#27352D] font-[var(--font-heading)]">
+                  Household Air & Ventilation Profile
+                </h2>
                 <p className="text-xs text-[#68766C]">
-                  Every recommendation follows the strict 6-field scientific explainability architecture.
+                  Customized parameters governing clean air delivery calculations and health defenses.
                 </p>
               </div>
-              <Badge variant="default" size="sm">
-                Household Profile: 2 Adults + 1 Asthmatic Child
-              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSetupModalOpen(true)}
+                leftIcon={<Settings className="w-3.5 h-3.5" />}
+              >
+                {household ? 'Edit Household Data' : 'Configure Household'}
+              </Button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ExplainableRecommendationCard
-                id="rec-01"
-                category="Indoor HEPA Protocol"
-                action="Operate Bedroom HEPA Purifier at 180 CFM Continuous Fan Speed"
-                scientificMechanism="During severe smog, standard building infiltration rate (0.5 ACH) continuously leaks outdoor PM2.5 indoors. A CADR of 180 CFM in a 200 sq ft room achieves 5.0 Air Changes per Hour, maintaining steady-state indoor PM2.5 below 15 µg/m³."
-                expectedBenefit="Reduces child bronchial irritation and prevents nocturnal asthma flare-ups by 78%."
-                quantifiedImpact="Estimated indoor particulate reduction: 82% compared to unpurified baseline room."
-                assumptionsAndUncertainty="Assumes closed windows with standard rubber weatherstripping. CADR tested on 0.3-micron particulate scale (±10% variance)."
-                implementationSteps={[
-                  'Position air purifier 3 feet away from walls for unobstructed airflow.',
-                  'Close bedroom door to maintain isolated clean-air bubble.',
-                  'Set speed to High from 22:00 to 07:00 during nocturnal peak inversion.',
-                ]}
-              />
+            {loadingHousehold ? (
+              <div className="p-12 text-center">
+                <Spinner size="md" className="mx-auto" />
+              </div>
+            ) : household ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card className="bg-white border-[#E2E8DE]">
+                  <CardHeader>
+                    <CardTitle className="text-base">Home Structure & Purifier Sizing</CardTitle>
+                    <CardDescription>ASHRAE/EPA filtration CADR algorithms</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <div className="flex justify-between py-1.5 border-b border-[#E2E8DE]">
+                      <span className="text-[#68766C]">Location:</span>
+                      <span className="font-semibold text-[#27352D]">{household.profile.city} {household.profile.neighborhood && `(${household.profile.neighborhood})`}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-[#E2E8DE]">
+                      <span className="text-[#68766C]">Housing Type:</span>
+                      <span className="font-semibold text-[#27352D]">{household.profile.homeType}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-[#E2E8DE]">
+                      <span className="text-[#68766C]">Floor Area:</span>
+                      <span className="font-semibold text-[#27352D]">{household.profile.floorAreaSqFt} sq ft</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-[#E2E8DE]">
+                      <span className="text-[#68766C]">Calculated Room Volume:</span>
+                      <span className="font-semibold text-[#27352D]">{household.cadrAnalysis.roomVolumeCuFt} cu ft</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-[#E2E8DE]">
+                      <span className="text-[#68766C]">Current HEPA Purifier:</span>
+                      <span className="font-semibold text-[#27352D]">{household.profile.hepaCADR ? `${household.profile.hepaCADR} CFM` : 'None reported'}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5">
+                      <span className="text-[#68766C]">Required CADR for Smog (5.0 ACH):</span>
+                      <span className="font-bold text-[#397A55]">{household.cadrAnalysis.requiredCADR_CFM} CFM ({household.cadrAnalysis.requiredCADR_M3H} m³/h)</span>
+                    </div>
+                  </CardContent>
+                </Card>
 
-              <ExplainableRecommendationCard
-                id="rec-02"
-                category="Ventilation Timing"
-                action="Execute 20-Minute Cross-Ventilation Flush at 13:30 Today"
-                scientificMechanism="Solar heating between 13:00 and 15:30 deepens the atmospheric boundary mixing layer, diluting outdoor ground-level PM2.5 to the daily low (135 AQI). Brief mechanical cross-ventilation expels accumulated indoor CO2 without saturating HEPA filters."
-                expectedBenefit="Lowers indoor CO2 from >1400 ppm to <700 ppm, eliminating cognitive fatigue and headaches."
-                quantifiedImpact="Indoor CO2 reduced by 50%; outdoor particulate ingress captured within 15 minutes of re-sealing."
-                assumptionsAndUncertainty="Relies on hourly Copernicus CAMS boundary layer forecast (±15% timing variance based on cloud cover)."
-                implementationSteps={[
-                  'Open opposite-facing windows for exactly 20 minutes at 13:30.',
-                  'Switch kitchen exhaust fan ON to assist cross-draft expulsion.',
-                  'Close windows firmly at 13:50 and resume HEPA filtration.',
-                ]}
+                <Card className="bg-white border-[#E2E8DE]">
+                  <CardHeader>
+                    <CardTitle className="text-base">Scientific Guidance & Myth Debunking</CardTitle>
+                    <CardDescription>Evidence-based indoor air purification</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4 text-xs text-[#27352D]">
+                    <div className="p-3 bg-[#EEF3EA] rounded-lg">
+                      <span className="font-semibold text-[#397A55] block mb-1">Houseplant Myth Debunking:</span>
+                      <p className="text-[#68766C] leading-relaxed">
+                        {household.cadrAnalysis.scientificPlantNotice}
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-[#F7F8F3] rounded-lg border border-[#E2E8DE]">
+                      <span className="font-semibold text-[#27352D] block mb-1">Standards Provenance:</span>
+                      <p className="text-[#68766C] leading-relaxed">
+                        {household.cadrAnalysis.standardsNote}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <EmptyState
+                icon={<Home className="w-8 h-8 text-[#68766C]" />}
+                title="No Household Profile Configured"
+                description="Setup your apartment or standalone house dimensions so BreatheWise AI can compute your family's exact air changes per hour (ACH)."
+                action={
+                  <Button variant="primary" size="md" onClick={() => setSetupModalOpen(true)}>
+                    Configure Household Now
+                  </Button>
+                }
               />
-            </div>
+            )}
           </div>
         )}
 
-        {/* 6. Daily Routine Cards */}
-        {(activeTab === 'all' || activeTab === 'routines') && (
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-xl font-bold text-[#27352D] font-[var(--font-heading)]">
-                Smog-Aware Commute & Travel Optimizer
-              </h3>
-              <p className="text-xs text-[#68766C]">
-                Balancing inhaled particulate dose against vehicle emissions. Safety strictly overrides green transit during hazardous smog.
-              </p>
+        {/* Tab 3: Commute Routines */}
+        {activeTab === 'routines' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-[#27352D] font-[var(--font-heading)]">
+                  Saved Commute Routines
+                </h2>
+                <p className="text-xs text-[#68766C]">
+                  Real transit routes evaluated for inhaled particulate dose reduction and CO2e avoidance.
+                </p>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setRoutineModalOpen(true)}
+                leftIcon={<Plus className="w-4 h-4" />}
+              >
+                Add Commute Route
+              </Button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <RoutineCard
-                title="Office Commute Corridor"
-                distanceKm={14.2}
-                origin="Sector 62, Noida"
-                destination="Barakhamba Road, Connaught Place"
-                baselineMode="Solo Gasoline Car (Traffic Jam)"
-                recommendedMode="Electric Metro (Blue Line with Underground Filtered Air)"
-                inhaledDoseReductionPercent={64}
-                co2AvoidedKg={2.08}
-                safetyReason="Underground metro cars feature mechanical air filtration. Riding the metro prevents 64% of particulate inhalation compared to sitting in idling road traffic, while eliminating 2.08 kg of CO2e."
+            {routines.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {routines.map((r) => (
+                  <Card key={r.id} className="bg-white border-[#E2E8DE]">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">{r.title}</CardTitle>
+                        <Badge variant="accent" size="sm">
+                          {r.distanceKm} km
+                        </Badge>
+                      </div>
+                      <CardDescription>
+                        {r.origin} → {r.destination} (Departs: {r.departureTime})
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-xs">
+                      <div className="flex justify-between py-1 border-b border-[#E2E8DE]">
+                        <span className="text-[#68766C]">Baseline Transit:</span>
+                        <span className="font-semibold text-[#27352D]">{r.baselineMode}</span>
+                      </div>
+                      {r.optimizedMode && (
+                        <div className="flex justify-between py-1 border-b border-[#E2E8DE]">
+                          <span className="text-[#68766C]">Optimized Transit:</span>
+                          <span className="font-semibold text-[#397A55]">{r.optimizedMode}</span>
+                        </div>
+                      )}
+                      {r.estimatedCO2SavingsKg && (
+                        <div className="flex justify-between py-1">
+                          <span className="text-[#68766C]">CO2 Avoided per trip:</span>
+                          <span className="font-bold text-[#397A55]">{r.estimatedCO2SavingsKg} kg CO2e</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={<Route className="w-8 h-8 text-[#68766C]" />}
+                title="No Commute Routines Saved"
+                description="Save your daily work, school, or errand routes to compare exposure differences between car, bus, and sealed metro."
+                action={
+                  <Button variant="primary" size="md" onClick={() => setRoutineModalOpen(true)}>
+                    Save First Commute
+                  </Button>
+                }
               />
-
-              <RoutineCard
-                title="School Drop-Off & Errands Chaining"
-                distanceKm={5.6}
-                origin="Mayur Vihar Phase 1"
-                destination="Preet Vihar Hub"
-                baselineMode="Open Motorcycle / Scooter"
-                recommendedMode="Filtered Rideshare / Carpool"
-                inhaledDoseReductionPercent={82}
-                co2AvoidedKg={0.45}
-                safetyReason="Motorcycle transit exposes pediatric lungs directly to diesel tailpipe plumes. Combining school drop-off with grocery errands in a filtered vehicle prevents severe particulate deposition."
-              />
-            </div>
+            )}
           </div>
         )}
 
-        {/* 8. Sustainability Suggestions & 9. Environmental Impact Metrics */}
-        {(activeTab === 'all' || activeTab === 'impact') && (
-          <div className="space-y-4">
+        {/* Tab 4: Impact Records */}
+        {activeTab === 'impact' && (
+          <div className="space-y-6">
             <div>
-              <h3 className="text-xl font-bold text-[#27352D] font-[var(--font-heading)]">
-                Audit-Grade Environmental Impact Tracker
-              </h3>
+              <h2 className="text-xl font-bold text-[#27352D] font-[var(--font-heading)]">
+                Personal Environmental Impact Tracker
+              </h2>
               <p className="text-xs text-[#68766C]">
-                Calculated using UK DEFRA and US EPA passenger-km constants. Open formula inspection with explicit uncertainty bounds.
+                Audit-grade records calculating avoided emissions and particulate matter.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              <ImpactMetricCard
-                label="Transport CO₂e Avoided"
-                value="48.6"
-                unit="kg CO₂e"
-                period="Past 30 Days"
-                formula="Distance Shifted (320 km) × [0.171 kg/km (Car) - 0.035 kg/km (Metro)]"
-                baseline="DEFRA Light Duty Gasoline Passenger Vehicle average 171 g CO2e/km"
-                uncertaintyMargin="±15% (Traffic idling and grid carbon intensity)"
-              />
-              <ImpactMetricCard
-                label="Tailpipe PM2.5 Prevented"
-                value="142"
-                unit="grams"
-                period="Past 30 Days"
-                formula="Shifted Distance × 0.015 g/km (Exhaust + Brake + Tire Wear Baseline)"
-                baseline="Direct exhaust and non-exhaust brake particulate factor"
-                uncertaintyMargin="±20% (Brake wear velocity variance)"
-              />
-              <ImpactMetricCard
-                label="Clean Air Hours Logged"
-                value="318"
-                unit="hours"
-                period="Past 30 Days"
-                formula="Total hours indoor air maintained at <15 µg/m³ PM2.5 via verified CADR"
-                baseline="Calculated room air exchange rate of 5.0 ACH"
-                uncertaintyMargin="±10% (Room infiltration coefficient)"
-              />
-            </div>
+            {impactAggregates && impactAggregates.totalLogsCount > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Card className="bg-white border-[#E2E8DE]">
+                  <CardContent className="p-5 text-center">
+                    <span className="text-xs font-semibold text-[#68766C]">Total Carbon Avoided</span>
+                    <div className="text-3xl font-extrabold text-[#397A55] mt-1 font-[var(--font-heading)]">
+                      {impactAggregates.totalCO2AvoidedKg} kg
+                    </div>
+                    <span className="text-[11px] text-[#68766C]">CO2e (DEFRA benchmark)</span>
+                  </CardContent>
+                </Card>
+                <Card className="bg-white border-[#E2E8DE]">
+                  <CardContent className="p-5 text-center">
+                    <span className="text-xs font-semibold text-[#68766C]">Particulates Avoided</span>
+                    <div className="text-3xl font-extrabold text-[#397A55] mt-1 font-[var(--font-heading)]">
+                      {impactAggregates.totalPM25AvoidedGrams} g
+                    </div>
+                    <span className="text-[11px] text-[#68766C]">Primary PM2.5 source reduction</span>
+                  </CardContent>
+                </Card>
+                <Card className="bg-white border-[#E2E8DE]">
+                  <CardContent className="p-5 text-center">
+                    <span className="text-xs font-semibold text-[#68766C]">Clean Travel Distance</span>
+                    <div className="text-3xl font-extrabold text-[#27352D] mt-1 font-[var(--font-heading)]">
+                      {impactAggregates.totalDistanceShiftedKm} km
+                    </div>
+                    <span className="text-[11px] text-[#68766C]">Shifted to low-emission transit</span>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : null}
 
-            {/* Scientific Houseplant Myth Disclaimer Card */}
-            <div className="p-4 rounded-[12px] bg-white border border-[#E2E8DE] shadow-2xs space-y-2">
-              <h4 className="font-bold text-sm text-[#27352D] font-[var(--font-heading)] flex items-center gap-2">
-                <Info className="w-4 h-4 text-[#397A55]" />
-                Scientific Honesty Notice: Houseplants vs. Mechanical HEPA Filtration
-              </h4>
-              <p className="text-xs text-[#68766C] leading-relaxed">
-                Many popular blogs claim that houseplants (like snake plants or peace lilies) clean indoor smog. Peer-reviewed environmental studies show that natural phytoremediation in residential conditions produces less than 0.05 Clean Air Delivery Rate (CADR). A single standard HEPA filter cleans 100 to 200 times more air per minute than 50 indoor plants. BreatheWise AI bases all indoor recommendations on verified mechanical filtration and airtight sealing.
+            {impactLogs.length > 0 ? (
+              <Card className="bg-white border-[#E2E8DE]">
+                <CardHeader>
+                  <CardTitle className="text-base">Audit Trail Logs</CardTitle>
+                  <CardDescription>Mathematical logs with explicit uncertainty bounds</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="divide-y divide-[#E2E8DE]">
+                    {impactLogs.map((log) => (
+                      <div key={log.id} className="p-4 flex items-center justify-between hover:bg-[#F7F8F3] text-xs">
+                        <div className="space-y-1">
+                          <span className="font-bold text-sm text-[#27352D] block">{log.title}</span>
+                          <span className="text-[#68766C]">{log.calculationFormula}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-bold text-[#397A55] block">+{log.co2AvoidedKg} kg CO2e</span>
+                          <span className="text-[11px] text-[#68766C]">±{(log.uncertaintyMargin * 100).toFixed(0)}% margin</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <EmptyState
+                icon={<Activity className="w-8 h-8 text-[#68766C]" />}
+                title="No Impact Actions Logged Yet"
+                description="When you commute via metro or filter your home air during smog events, verifiable impact logs will appear here."
+              />
+            )}
+          </div>
+        )}
+
+        {/* Tab 5: Account & Privacy Settings */}
+        {activeTab === 'settings' && (
+          <div className="space-y-6 max-w-2xl">
+            <div>
+              <h2 className="text-xl font-bold text-[#27352D] font-[var(--font-heading)]">
+                Account & Privacy Settings
+              </h2>
+              <p className="text-xs text-[#68766C]">
+                Your personal security identifiers and cryptographic session status.
               </p>
             </div>
+
+            <Card className="bg-white border-[#E2E8DE]">
+              <CardHeader>
+                <CardTitle className="text-base">User Identity</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex justify-between py-2 border-b border-[#E2E8DE]">
+                  <span className="text-[#68766C]">User ID:</span>
+                  <span className="font-mono text-xs text-[#27352D]">{user?.id}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-[#E2E8DE]">
+                  <span className="text-[#68766C]">Email:</span>
+                  <span className="font-semibold text-[#27352D]">{user?.email}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-[#E2E8DE]">
+                  <span className="text-[#68766C]">Role:</span>
+                  <Badge variant="secondary" size="sm">{user?.role}</Badge>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-[#68766C]">Session Type:</span>
+                  <span className="text-xs font-semibold text-[#397A55]">Server-Side Opaque Database Token</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white border-[#E2E8DE]">
+              <CardHeader>
+                <CardTitle className="text-base">Privacy & Retention Policy</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs text-[#68766C] leading-relaxed">
+                <p>
+                  BreatheWise AI processes household floor areas and vulnerability tiers exclusively to compute clean air delivery requirements and generate personalized protective routines.
+                </p>
+                <p>
+                  All community observation submissions are geographically quantized to 2 decimal places (~1.1 km neighborhood centroid) and never expose your real name, email, or exact residence coordinates.
+                </p>
+              </CardContent>
+            </Card>
           </div>
         )}
       </Container>
+
+      {/* Household Setup Modal */}
+      <Modal
+        isOpen={setupModalOpen}
+        onClose={() => setSetupModalOpen(false)}
+        title="Setup Household Air Profile"
+        size="lg"
+      >
+        <form onSubmit={handleSaveHousehold} className="space-y-4">
+          {householdError && (
+            <Alert variant="danger" title="Error Saving Profile">
+              {householdError}
+            </Alert>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              id="h-city"
+              label="City"
+              value={setupForm.city}
+              onChange={(e) => setSetupForm({ ...setupForm, city: e.target.value })}
+              required
+            />
+            <Input
+              id="h-neighborhood"
+              label="Neighborhood / Sector"
+              placeholder="e.g. Rohini or Indirapuram"
+              value={setupForm.neighborhood}
+              onChange={(e) => setSetupForm({ ...setupForm, neighborhood: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Select
+              id="h-type"
+              label="Housing Type"
+              value={setupForm.homeType}
+              onChange={(e) => setSetupForm({ ...setupForm, homeType: e.target.value })}
+              options={[
+                { value: 'APARTMENT', label: 'Apartment' },
+                { value: 'STANDALONE_HOUSE', label: 'Standalone House' },
+                { value: 'MULTI_STORY', label: 'Multi-Story Villa' },
+              ]}
+            />
+            <Input
+              id="h-area"
+              type="number"
+              label="Floor Area (sq ft)"
+              value={setupForm.floorAreaSqFt}
+              onChange={(e) => setSetupForm({ ...setupForm, floorAreaSqFt: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Select
+              id="h-sealing"
+              label="Window Sealing Quality"
+              value={setupForm.windowSealing}
+              onChange={(e) => setSetupForm({ ...setupForm, windowSealing: e.target.value })}
+              options={[
+                { value: 'POOR', label: 'Poor (Drafty, single-pane)' },
+                { value: 'MODERATE', label: 'Moderate (Standard sliding windows)' },
+                { value: 'TIGHT', label: 'Airtight (Weather-stripped, double glazed)' },
+              ]}
+            />
+            <Input
+              id="h-purifier"
+              type="number"
+              label="HEPA Purifier CADR (CFM)"
+              placeholder="e.g. 250"
+              value={setupForm.hepaCADR}
+              onChange={(e) => setSetupForm({ ...setupForm, hepaCADR: e.target.value })}
+              helperText="Check purifier specification sticker (CFM or m³/h ÷ 1.7)"
+            />
+          </div>
+
+          <div className="pt-2 border-t border-[#E2E8DE] space-y-2">
+            <span className="text-xs font-bold text-[#27352D] block">Vulnerable Household Flags (Optional):</span>
+            <label className="flex items-center gap-2 text-xs text-[#27352D] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={setupForm.hasAsthmaticMember}
+                onChange={(e) => setSetupForm({ ...setupForm, hasAsthmaticMember: e.target.checked })}
+                className="rounded border-[#E2E8DE] text-[#397A55] focus:ring-[#397A55]"
+              />
+              Household member with asthma or chronic respiratory conditions
+            </label>
+            <label className="flex items-center gap-2 text-xs text-[#27352D] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={setupForm.hasInfantOrPregnant}
+                onChange={(e) => setSetupForm({ ...setupForm, hasInfantOrPregnant: e.target.checked })}
+                className="rounded border-[#E2E8DE] text-[#397A55] focus:ring-[#397A55]"
+              />
+              Infant under 2 years old or pregnant mother in residence
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-[#E2E8DE]">
+            <Button variant="outline" size="sm" type="button" onClick={() => setSetupModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" type="submit" isLoading={savingHousehold}>
+              Save Household Profile
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Routine Creation Modal */}
+      <Modal
+        isOpen={routineModalOpen}
+        onClose={() => setRoutineModalOpen(false)}
+        title="Add Commute Routine"
+        size="md"
+      >
+        <form onSubmit={handleCreateRoutine} className="space-y-4">
+          <Input
+            id="r-title"
+            label="Routine Name"
+            placeholder="e.g. Office Commute"
+            value={routineForm.title}
+            onChange={(e) => setRoutineForm({ ...routineForm, title: e.target.value })}
+            required
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              id="r-orig"
+              label="Origin"
+              value={routineForm.origin}
+              onChange={(e) => setRoutineForm({ ...routineForm, origin: e.target.value })}
+              required
+            />
+            <Input
+              id="r-dest"
+              label="Destination"
+              value={routineForm.destination}
+              onChange={(e) => setRoutineForm({ ...routineForm, destination: e.target.value })}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              id="r-dist"
+              type="number"
+              label="Distance (km)"
+              value={routineForm.distanceKm}
+              onChange={(e) => setRoutineForm({ ...routineForm, distanceKm: e.target.value })}
+              required
+            />
+            <Input
+              id="r-dep"
+              label="Departure Time (24h)"
+              value={routineForm.departureTime}
+              onChange={(e) => setRoutineForm({ ...routineForm, departureTime: e.target.value })}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Select
+              id="r-base"
+              label="Baseline Transit"
+              value={routineForm.baselineMode}
+              onChange={(e) => setRoutineForm({ ...routineForm, baselineMode: e.target.value })}
+              options={[
+                { value: 'SOLO_CAR', label: 'Solo Car' },
+                { value: 'MOTORCYCLE', label: 'Motorcycle' },
+                { value: 'BUS', label: 'Bus' },
+              ]}
+            />
+            <Select
+              id="r-opt"
+              label="Optimized Alternative"
+              value={routineForm.optimizedMode}
+              onChange={(e) => setRoutineForm({ ...routineForm, optimizedMode: e.target.value })}
+              options={[
+                { value: 'METRO', label: 'Metro (Sealed filtration)' },
+                { value: 'CARPOOL', label: 'Carpool' },
+                { value: 'BUS', label: 'Electric Bus' },
+              ]}
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-4 border-t border-[#E2E8DE]">
+            <Button variant="outline" size="sm" type="button" onClick={() => setRoutineModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" type="submit" isLoading={savingRoutine}>
+              Save Commute
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

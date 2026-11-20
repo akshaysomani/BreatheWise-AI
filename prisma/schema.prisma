@@ -25,8 +25,41 @@ model User {
   impactLogs            ImpactLog[]
   reports               CommunityReport[]
   recommendationRecords RecommendationRecord[]
+  sessions              Session[]
+  passwordResetTokens   PasswordResetToken[]
 
   @@index([email])
+}
+
+// ----------------------------------------------------
+// 1b. Server-Side Session & Authentication State (M3)
+// ----------------------------------------------------
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  userAgent    String?
+  ipAddress    String?
+
+  @@index([userId])
+  @@index([sessionToken])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
 }
 
 // ----------------------------------------------------

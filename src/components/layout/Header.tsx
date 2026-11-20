@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Container } from './Container';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
-import { Wind, Menu, X, ArrowUpRight, Sparkles } from 'lucide-react';
+import { Wind, Menu, X, ArrowUpRight, Sparkles, User, LogOut, LayoutDashboard } from 'lucide-react';
 
 interface NavItem {
   label: string;
@@ -28,8 +28,51 @@ const navItems: NavItem[] = [
 
 export function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeModulePreview, setActiveModulePreview] = useState<string | null>(null);
+
+  // Authenticated user state
+  const [sessionUser, setSessionUser] = useState<{ id: string; email: string; name: string | null } | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/auth/session', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data?.data?.authenticated && data?.data?.user) {
+            setSessionUser(data.data.user);
+          } else if (isMounted) {
+            setSessionUser(null);
+          }
+        }
+      } catch {
+        // Fallback to unauthenticated on error
+        if (isMounted) setSessionUser(null);
+      } finally {
+        if (isMounted) setCheckingSession(false);
+      }
+    }
+    checkAuth();
+    return () => {
+      isMounted = false;
+    };
+  }, [pathname]);
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      setSessionUser(null);
+      setMobileMenuOpen(false);
+      router.push('/');
+      router.refresh();
+    } catch {
+      router.push('/');
+    }
+  };
 
   const handleNavClick = (e: React.MouseEvent, item: NavItem) => {
     if (item.moduleTarget) {
@@ -88,18 +131,40 @@ export function Header() {
             })}
           </nav>
 
-          {/* Desktop Action CTAs */}
+          {/* Desktop Action CTAs / User Auth */}
           <div className="hidden sm:flex items-center gap-3">
-            <Link href="/dashboard">
-              <Button variant="outline" size="md">
-                Live Radar
-              </Button>
-            </Link>
-            <Link href="/#hero">
-              <Button variant="primary" size="md" leftIcon={<Sparkles className="w-4 h-4" />}>
-                Get Guidance
-              </Button>
-            </Link>
+            {sessionUser ? (
+              <div className="flex items-center gap-3">
+                <Link href="/dashboard">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#EEF3EA] text-[#27352D] hover:bg-[#E2E8DE] transition-colors text-sm font-medium">
+                    <User className="w-4 h-4 text-[#397A55]" />
+                    <span className="max-w-[140px] truncate">{sessionUser.name || sessionUser.email}</span>
+                  </div>
+                </Link>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLogout}
+                  leftIcon={<LogOut className="w-3.5 h-3.5 text-[#B8423D]" />}
+                  className="text-[#B8423D] hover:bg-[#FDF2F2] border-[#F0D5D5]"
+                >
+                  Sign Out
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link href="/login">
+                  <Button variant="ghost" size="md">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link href="/register">
+                  <Button variant="primary" size="md" leftIcon={<Sparkles className="w-4 h-4" />}>
+                    Get Started
+                  </Button>
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -137,44 +202,62 @@ export function Header() {
             ))}
           </nav>
           <div className="pt-4 border-t border-[#E2E8DE] flex flex-col gap-2">
-            <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)}>
-              <Button variant="outline" size="md" className="w-full">
-                Dashboard Overview
-              </Button>
-            </Link>
-            <Link href="/#hero" onClick={() => setMobileMenuOpen(false)}>
-              <Button variant="primary" size="md" className="w-full">
-                Get Personalized Guidance
-              </Button>
-            </Link>
+            {sessionUser ? (
+              <>
+                <Link
+                  href="/dashboard"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-[#EEF3EA] text-[#27352D] font-medium"
+                >
+                  <LayoutDashboard className="w-4 h-4 text-[#397A55]" />
+                  <span>Dashboard ({sessionUser.name || sessionUser.email})</span>
+                </Link>
+                <Button
+                  variant="outline"
+                  size="md"
+                  onClick={handleLogout}
+                  leftIcon={<LogOut className="w-4 h-4 text-[#B8423D]" />}
+                  className="w-full text-[#B8423D]"
+                >
+                  Sign Out
+                </Button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
+                  <Button variant="outline" size="md" className="w-full">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link href="/register" onClick={() => setMobileMenuOpen(false)}>
+                  <Button variant="primary" size="md" className="w-full">
+                    Create Account
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       )}
 
-      {/* Honest Module Preview Notice Modal */}
+      {/* Architecture Roadmap Preview Modal */}
       <Modal
-        isOpen={Boolean(activeModulePreview)}
+        isOpen={!!activeModulePreview}
         onClose={() => setActiveModulePreview(null)}
-        title="MOSAIC Sequential Roadmap Feature"
-        description="BreatheWise AI is engineered using strict sequential MOSAIC modules."
+        title="Engineering Roadmap Specification"
+        size="md"
       >
         <div className="space-y-4">
-          <div className="p-4 rounded-[10px] bg-[#EEF3EA] border border-[#CDE0D3]">
-            <p className="text-sm font-semibold text-[#397A55]">
-              Scheduled for Activation in: {activeModulePreview}
-            </p>
-            <p className="text-xs text-[#68766C] mt-1.5 leading-relaxed">
-              In accordance with competition rules, real API integrations, AI reasoning pipelines, and database mutations are implemented strictly in their designated modules. You are currently viewing the verified M1 Frontend Foundation.
-            </p>
+          <div className="p-3 bg-[#EEF3EA] rounded-lg flex items-center gap-3">
+            <Sparkles className="w-5 h-5 text-[#397A55] shrink-0" />
+            <p className="text-sm font-semibold text-[#27352D]">{activeModulePreview}</p>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Link href="/dashboard" onClick={() => setActiveModulePreview(null)}>
-              <Button variant="outline" size="md">
-                View M1 Visual Foundation
-              </Button>
-            </Link>
-            <Button variant="primary" size="md" onClick={() => setActiveModulePreview(null)}>
-              Understood
+          <p className="text-sm text-[#68766C] leading-relaxed">
+            This module is scheduled for implementation in upcoming modules in accordance with the strict sequential MOSAIC specification.
+          </p>
+          <div className="flex justify-end pt-2">
+            <Button variant="outline" size="sm" onClick={() => setActiveModulePreview(null)}>
+              Dismiss
             </Button>
           </div>
         </div>

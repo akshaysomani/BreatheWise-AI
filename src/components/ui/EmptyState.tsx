@@ -9,6 +9,7 @@ export interface EmptyStateProps {
   description: string;
   actionLabel?: string;
   onAction?: () => void;
+  action?: React.ReactNode;
   className?: string;
 }
 
@@ -18,6 +19,7 @@ export function EmptyState({
   description,
   actionLabel,
   onAction,
+  action,
   className,
 }: EmptyStateProps) {
   return (
@@ -36,11 +38,13 @@ export function EmptyState({
       <p className="text-sm text-[#68766C] max-w-md leading-relaxed mb-6">
         {description}
       </p>
-      {actionLabel && onAction && (
+      {action ? (
+        action
+      ) : actionLabel && onAction ? (
         <Button variant="primary" size="md" onClick={onAction}>
           {actionLabel}
         </Button>
-      )}
+      ) : null}
     </div>
   );
 }

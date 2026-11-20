@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import { AlertCircle, CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 
 export interface AlertProps extends React.HTMLAttributes<HTMLDivElement> {
-  variant?: 'info' | 'success' | 'warning' | 'error';
+  variant?: 'info' | 'success' | 'warning' | 'error' | 'danger';
   title?: string;
   onClose?: () => void;
 }
@@ -33,9 +33,13 @@ export function Alert({
       container: 'bg-[#FCEBEA] border-[#F6C1BE] text-[#27352D]',
       icon: <AlertCircle className="w-5 h-5 text-[#B8423D] shrink-0" aria-hidden="true" />,
     },
+    danger: {
+      container: 'bg-[#FCEBEA] border-[#F6C1BE] text-[#27352D]',
+      icon: <AlertCircle className="w-5 h-5 text-[#B8423D] shrink-0" aria-hidden="true" />,
+    },
   };
 
-  const selected = variants[variant];
+  const selected = variants[variant] || variants.error;
 
   return (
     <div

@@ -1,18 +1,20 @@
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
+import { validateDatabaseSession, SESSION_COOKIE_NAME } from './session';
 
 export interface AuthenticatedUser {
   id: string;
   email: string;
   role: string;
+  name?: string | null;
 }
 
 export interface SessionPayload {
-  sub: string;       // User ID
+  sub: string; // User ID
   email: string;
   role: string;
-  exp: number;       // Expiry timestamp (epoch seconds)
-  iat: number;       // Issued at timestamp (epoch seconds)
+  exp: number; // Expiry timestamp (epoch seconds)
+  iat: number; // Issued at timestamp (epoch seconds)
 }
 
 /**
@@ -135,31 +137,60 @@ export function verifySessionToken(token: string): AuthenticatedUser | null {
 }
 
 /**
- * Secure Server-Side Identity Boundary for BreatheWise AI.
+ * Secure Server-Side Identity Boundary for BreatheWise AI (M3 Dual Adapter).
  * 
- * SECURITY AUDIT ENFORCEMENT (M2.1):
+ * Supports:
+ * 1. Primary Browser Session: HttpOnly cookie (`breathewise_session`) validated against DB `Session` table.
+ * 2. API Bearer Token:
+ *    - Opaque 64-char hex token: validated against DB `Session` table.
+ *    - Signed HMAC token (`v1.<payload>.<sig>`): verified cryptographically.
+ * 
+ * SECURITY INVARIANTS:
  * - NEVER trusts raw client-supplied headers like `x-authenticated-user-id`.
- * - Forged or unsigned identity headers are strictly ignored and rejected.
- * - Authenticates ONLY via cryptographically verified Bearer session tokens.
- * - Fails closed on missing, malformed, or tampered credentials.
+ * - Forged, expired, or unverified sessions fail closed with `null`.
  */
 export async function getSessionUser(req: NextRequest): Promise<AuthenticatedUser | null> {
+  // 1. Inspect Session Cookie (Browser flow)
+  const sessionCookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+  if (sessionCookie) {
+    const dbSession = await validateDatabaseSession(sessionCookie);
+    if (dbSession && dbSession.user) {
+      return {
+        id: dbSession.user.id,
+        email: dbSession.user.email,
+        name: dbSession.user.name,
+        role: dbSession.user.role,
+      };
+    }
+  }
+
+  // 2. Inspect Authorization Header (API / Test client flow)
   const authHeader = req.headers.get('authorization');
-  if (!authHeader) {
-    return null;
+  if (authHeader) {
+    const trimmed = authHeader.trim();
+    if (trimmed.startsWith('Bearer ')) {
+      const token = trimmed.substring(7).trim();
+      if (!token) return null;
+
+      // Case A: Signed HMAC token
+      if (token.startsWith('v1.')) {
+        return verifySessionToken(token);
+      }
+
+      // Case B: Opaque DB session token
+      const dbSession = await validateDatabaseSession(token);
+      if (dbSession && dbSession.user) {
+        return {
+          id: dbSession.user.id,
+          email: dbSession.user.email,
+          name: dbSession.user.name,
+          role: dbSession.user.role,
+        };
+      }
+    }
   }
 
-  const trimmed = authHeader.trim();
-  if (!trimmed.startsWith('Bearer ')) {
-    return null;
-  }
-
-  const token = trimmed.substring(7).trim();
-  if (!token) {
-    return null;
-  }
-
-  return verifySessionToken(token);
+  return null;
 }
 
 /**
