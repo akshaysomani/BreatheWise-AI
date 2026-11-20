@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
+import prisma from '@/lib/db';
 import { validateDatabaseSession, SESSION_COOKIE_NAME } from './session';
 
 export interface AuthenticatedUser {
@@ -172,9 +173,24 @@ export async function getSessionUser(req: NextRequest): Promise<AuthenticatedUse
       const token = trimmed.substring(7).trim();
       if (!token) return null;
 
-      // Case A: Signed HMAC token
+      // Case A: Signed HMAC token (Service-to-Service / Test client flow)
       if (token.startsWith('v1.')) {
-        return verifySessionToken(token);
+        const verifiedTokenUser = verifySessionToken(token);
+        if (!verifiedTokenUser) return null;
+
+        // Verify active user existence in database to prevent deleted/suspended user access
+        const dbUser = await prisma.user.findUnique({
+          where: { id: verifiedTokenUser.id },
+          select: { id: true, email: true, name: true, role: true },
+        });
+        if (!dbUser) return null;
+
+        return {
+          id: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.name,
+          role: dbUser.role,
+        };
       }
 
       // Case B: Opaque DB session token

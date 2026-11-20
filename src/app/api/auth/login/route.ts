@@ -3,7 +3,7 @@ import prisma from '@/lib/db';
 import { apiSuccess, apiError, handleApiError } from '@/lib/api-response';
 import { loginSchema } from '@/lib/validations/auth.schema';
 import { verifyPassword, dummyPasswordVerification } from '@/lib/password';
-import { createDatabaseSession, getSessionCookieOptions } from '@/lib/session';
+import { createDatabaseSession, getSessionCookieOptions, invalidateDatabaseSession, SESSION_COOKIE_NAME } from '@/lib/session';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 import { validateCsrf } from '@/lib/csrf';
 
@@ -47,6 +47,12 @@ export async function POST(req: NextRequest) {
     const passwordValid = await verifyPassword(validated.password, user.passwordHash);
     if (!passwordValid) {
       return apiError('INVALID_CREDENTIALS', 'Invalid email or password.', 401);
+    }
+
+    // Session Fixation Defense: Invalidate any pre-existing session associated with incoming cookie
+    const oldSessionCookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+    if (oldSessionCookie) {
+      await invalidateDatabaseSession(oldSessionCookie);
     }
 
     // Create session in database

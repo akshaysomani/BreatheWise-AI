@@ -26,10 +26,12 @@ export const loginSchema = z.object({
     .string()
     .trim()
     .toLowerCase()
-    .email('Please enter a valid email address'),
+    .email('Please enter a valid email address')
+    .max(255, 'Email cannot exceed 255 characters'),
   password: z
     .string()
-    .min(1, 'Password is required'),
+    .min(1, 'Password is required')
+    .max(128, 'Password cannot exceed 128 characters'),
 });
 
 export const passwordResetRequestSchema = z.object({

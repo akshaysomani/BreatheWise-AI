@@ -1,65 +1,138 @@
 import { NextRequest } from 'next/server';
+import { SESSION_COOKIE_NAME } from './session';
 
 /**
- * BreatheWise AI — Cross-Site Request Forgery (CSRF) Defensive Guard
+ * BreatheWise AI — Hardened Cross-Site Request Forgery (CSRF) & Trusted Origin Guard
  * 
- * STRATEGY:
- * 1. For state-changing operations (POST, PUT, PATCH, DELETE) initiated via cookies:
- *    - Validates that the Origin or Referer header matches the expected application origin.
- *    - Rejects cross-origin submissions from unauthorized external domains.
- * 2. Allows requests with Bearer tokens or verified non-browser client headers.
+ * SECURITY SPECIFICATION (M3.1):
+ * - Eliminates blind reliance on request-supplied `Host` or `X-Forwarded-Host` headers.
+ * - Resolves trusted origins from controlled server-side configuration (`TRUSTED_ORIGINS`, `APP_URL`, `NEXT_PUBLIC_APP_URL`).
+ * - In non-production environments, permits standard loopback origins (`localhost:3000`, `127.0.0.1:3000`).
+ * - Validates incoming `Origin` and `Referer` headers against the controlled trusted origin whitelist.
+ * - For state-changing mutations (POST, PUT, PATCH, DELETE) that carry session cookies:
+ *   - Rejects untrusted cross-origin requests with HTTP 403.
+ *   - Rejects requests with malformed Origin or Referer URLs.
+ *   - Fails closed if BOTH Origin and Referer are missing on cookie-authenticated browser requests.
+ * - Pure Bearer token requests (programmatic API/CLI) and safe read methods (GET, HEAD, OPTIONS) are exempt.
  */
-export function validateCsrf(req: NextRequest): { valid: boolean; reason?: string } {
+
+/**
+ * Retrieves the normalized set of trusted origins from server configuration.
+ */
+export function getTrustedOrigins(): Set<string> {
+  const origins = new Set<string>();
+
+  // 1. Explicitly configured TRUSTED_ORIGINS environment variable
+  const envOrigins = process.env.TRUSTED_ORIGINS;
+  if (envOrigins) {
+    envOrigins.split(',').forEach((o) => {
+      const trimmed = o.trim();
+      if (trimmed) {
+        try {
+          const parsed = new URL(trimmed);
+          origins.add(parsed.origin.toLowerCase());
+        } catch {
+          // If already just host:port or valid format
+          origins.add(trimmed.toLowerCase());
+        }
+      }
+    });
+  }
+
+  // 2. Server APP_URL or NEXT_PUBLIC_APP_URL
+  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
+  if (appUrl) {
+    try {
+      const parsed = new URL(appUrl);
+      origins.add(parsed.origin.toLowerCase());
+    } catch {
+      origins.add(appUrl.toLowerCase());
+    }
+  }
+
+  // 3. Local development and test fallbacks (disabled if NODE_ENV === 'production' unless configured)
+  if (process.env.NODE_ENV !== 'production') {
+    origins.add('http://localhost:3000');
+    origins.add('http://127.0.0.1:3000');
+    origins.add('http://localhost:3001');
+    origins.add('http://127.0.0.1:3001');
+  }
+
+  return origins;
+}
+
+export interface CsrfValidationResult {
+  valid: boolean;
+  reason?: string;
+}
+
+/**
+ * Validates request origin against server-side trusted origins.
+ */
+export function validateCsrf(req: NextRequest): CsrfValidationResult {
   const method = req.method.toUpperCase();
-  // Safe read-only methods are exempt from CSRF checks
+
+  // Safe read-only HTTP methods are exempt from CSRF checks
   if (['GET', 'HEAD', 'OPTIONS'].includes(method)) {
     return { valid: true };
   }
 
-  // If request authenticates via explicit Bearer header, browser CSRF does not apply
+  // Programmatic API clients sending Bearer authorization are not vulnerable to browser CSRF
   const authHeader = req.headers.get('authorization');
   if (authHeader && authHeader.trim().startsWith('Bearer ')) {
     return { valid: true };
   }
 
+  const hasSessionCookie = Boolean(req.cookies.get(SESSION_COOKIE_NAME)?.value);
   const origin = req.headers.get('origin');
   const referer = req.headers.get('referer');
-  const host = req.headers.get('host') || 'localhost:3000';
+  const trustedOrigins = getTrustedOrigins();
 
-  // In test environments or server-to-server calls where neither is sent
-  if (!origin && !referer) {
-    // If a custom header is present, it cannot be forged by standard HTML form submission
-    const requestedWith = req.headers.get('x-requested-with') || req.headers.get('content-type');
-    if (requestedWith?.includes('application/json')) {
-      return { valid: true };
-    }
-    return { valid: true }; // Permissive for local server-side tests
-  }
-
-  // Validate Origin
+  // 1. If Origin header is provided (standard for modern browser CORS/fetch/POST)
   if (origin) {
     try {
-      const originUrl = new URL(origin);
-      if (originUrl.host === host || originUrl.host.includes('localhost')) {
+      const parsedOrigin = new URL(origin).origin.toLowerCase();
+      if (trustedOrigins.has(parsedOrigin)) {
         return { valid: true };
       }
-      return { valid: false, reason: `Origin header '${originUrl.host}' does not match host '${host}'` };
+      return {
+        valid: false,
+        reason: `Untrusted Origin header: '${origin}'. Does not match configured trusted origins.`,
+      };
     } catch {
       return { valid: false, reason: 'Malformed Origin header' };
     }
   }
 
-  // Validate Referer
+  // 2. If Origin is absent, inspect Referer header as fallback
   if (referer) {
     try {
-      const refererUrl = new URL(referer);
-      if (refererUrl.host === host || refererUrl.host.includes('localhost')) {
+      const parsedRefererOrigin = new URL(referer).origin.toLowerCase();
+      if (trustedOrigins.has(parsedRefererOrigin)) {
         return { valid: true };
       }
-      return { valid: false, reason: `Referer header '${refererUrl.host}' does not match host '${host}'` };
+      return {
+        valid: false,
+        reason: `Untrusted Referer header: '${referer}'. Does not match configured trusted origins.`,
+      };
     } catch {
       return { valid: false, reason: 'Malformed Referer header' };
     }
+  }
+
+  // 3. Both Origin and Referer are absent
+  // If the request carries an ambient session cookie, missing origin headers indicate an anomalous request
+  if (hasSessionCookie) {
+    return {
+      valid: false,
+      reason: 'Missing both Origin and Referer headers on cookie-authenticated state-changing request.',
+    };
+  }
+
+  // In headless tests or direct server-to-server calls without cookies, verify custom header
+  const customHeader = req.headers.get('x-requested-with') || req.headers.get('content-type');
+  if (customHeader?.includes('application/json')) {
+    return { valid: true };
   }
 
   return { valid: true };

@@ -3,7 +3,7 @@ import prisma from '@/lib/db';
 import { apiSuccess, apiError, handleApiError } from '@/lib/api-response';
 import { registerSchema } from '@/lib/validations/auth.schema';
 import { hashPassword } from '@/lib/password';
-import { createDatabaseSession, getSessionCookieOptions } from '@/lib/session';
+import { createDatabaseSession, getSessionCookieOptions, invalidateDatabaseSession, SESSION_COOKIE_NAME } from '@/lib/session';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 import { validateCsrf } from '@/lib/csrf';
 
@@ -61,6 +61,12 @@ export async function POST(req: NextRequest) {
         createdAt: true,
       },
     });
+
+    // Session Fixation Defense: Invalidate any pre-existing session associated with incoming cookie
+    const oldSessionCookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+    if (oldSessionCookie) {
+      await invalidateDatabaseSession(oldSessionCookie);
+    }
 
     // Create persistent database session
     const { sessionToken, expiresAt } = await createDatabaseSession(newUser.id, req);

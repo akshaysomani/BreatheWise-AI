@@ -188,7 +188,7 @@ describe('Authentication & Session Engine (M3 Core Services)', () => {
       });
       const check = validateCsrf(req);
       expect(check.valid).toBe(false);
-      expect(check.reason).toContain('does not match host');
+      expect(check.reason?.toLowerCase()).toMatch(/untrusted origin|does not match/);
     });
   });
 });

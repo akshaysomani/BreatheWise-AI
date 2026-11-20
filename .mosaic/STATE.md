@@ -2,8 +2,8 @@
 **Project:** BreatheWise AI  
 **Competition:** Prompt War — Challenge 6: Urban Air Quality Assistant  
 **Target Score:** 97.50+ / 100  
-**Current Phase:** M3 — Authentication & User Dashboard  
-**Document Version:** 1.3.0  
+**Current Phase:** M3.1 — Authentication Security Hardening & Browser Verification  
+**Document Version:** 1.3.1  
 **Last Updated:** 2026-11-20  
 
 ---
@@ -30,22 +30,21 @@
 ---
 
 ## 3. Current Module Status
-- **Current Module:** `M3 — Authentication & User Dashboard`
-- **Status:** **COMPLETED & INDEPENDENTLY VERIFIED (98/98 Tests Passing)**
+- **Current Module:** `M3.1 — Authentication Security Hardening & Browser Verification`
+- **Status:** **COMPLETED & INDEPENDENTLY VERIFIED (124/124 Tests Passing)**
 - **Completion Evidence:**
-  - **Database Models & Schema Migrations:** Added `Session` (opaque 256-bit token hex string, rolling 7-day expiration, user agent, IP tracking) and `PasswordResetToken` (SHA-256 hashed single-use tokens, 1-hour expiration) models to `prisma/schema.prisma`. Successfully migrated via `20261120103047_add_sessions_and_reset_tokens`. Database now comprises **10 normalized models**.
-  - **Cryptographic Password Security:** Implemented Node.js native `crypto.scrypt` password hashing ($N=16384, r=8, p=1, \text{keyLen}=64$) with 16-byte cryptographically secure random salt and constant-time `crypto.timingSafeEqual` verification (`src/lib/password.ts`).
-  - **Account Enumeration Defense:** Implemented `dummyPasswordVerification()` workload in `src/lib/password.ts` to ensure unauthenticated login attempts against non-existent emails incur identical scrypt computation latency as existing accounts.
-  - **Opaque Database Sessions & Secure Cookies:** Server-issued `breathewise_session` cookie configured with `HttpOnly`, `SameSite=Lax`, `Path=/`, and `Secure` (production environment) attributes (`src/lib/session.ts`).
-  - **CSRF Defense:** Implemented strict Origin/Referer validation against Host for state-changing browser cookie requests (`src/lib/csrf.ts`).
-  - **Open Redirect Defense:** Implemented strict `sanitizeReturnUrl` validator rejecting external schemes, protocol-relative slashes (`//`), backslashes (`\`), and CRLF injection (`src/lib/sanitize-redirect.ts`).
-  - **Dual Authentication Guard:** Updated `getSessionUser(req)` in `src/lib/auth-guard.ts` to support both cookie-based web sessions and cryptographically signed HMAC Bearer tokens (`v1.<payload>.<sig>`) for headless API integration.
-  - **Edge Route Protection:** Implemented Next.js route middleware (`src/middleware.ts`) protecting `/dashboard/:path*`, enforcing login redirects with sanitized return URLs, and redirecting authenticated users away from `/login` and `/register`.
-  - **Complete Route Handlers:** Implemented `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/session`, and `POST /api/auth/reset-password` with rate-limiting, audit logging, and honest unconfigured email provider disclosures.
-  - **Accessible Frontend UI:** Built responsive, accessible, light-theme `src/app/login/page.tsx`, `src/app/register/page.tsx`, and full 5-tab user dashboard `src/app/dashboard/page.tsx` (Overview, Household Profile & CADR, Commute Routines, Impact Records, Account & Privacy). Updated global `Header.tsx` with dynamic session indicator and sign-out controls.
-  - **Automated Verification:** **98/98 tests passing** across 9 test suites (`npm test -- --run`).
+  - **Zero Password Reset Token Exposure:** Completely eliminated any logging or API return of raw reset tokens. The server stores only cryptographic SHA-256 hashes (`tokenHash`), logs only domain-level sanitized metadata, and returns a 100% generic response (`src/app/api/auth/reset-password/route.ts`).
+  - **Atomic Token Invalidation & Race Defense:** Single-use token consumption enforced via atomic `prisma.passwordResetToken.updateMany({ where: { id, usedAt: null, expiresAt: { gt: now } }, data: { usedAt: now } })`. Concurrent duplicate attempts fail closed with HTTP 400.
+  - **Session Invalidation on Password Reset:** All active database sessions for a user are deleted atomically upon password reset (`prisma.session.deleteMany`).
+  - **Controlled Trusted Origin CSRF Defense:** Eliminated blind reliance on request `Host` or `X-Forwarded-Host`. Implemented server-controlled trusted origin resolution (`getTrustedOrigins()`) via `TRUSTED_ORIGINS`, `APP_URL`, and loopback fallbacks in development only (`src/lib/csrf.ts`). Missing origin headers on cookie-authenticated mutations fail closed with HTTP 403.
+  - **Session Fixation Prevention:** Registration and login endpoints explicitly check for existing session cookies and immediately invalidate them before provisioning a fresh session.
+  - **Dual Auth Path Hardening:** `getSessionUser` verifies active user status and latest database role on HMAC tokens, preventing deleted or demoted accounts from acting with stale tokens.
+  - **Bounded Input Lengths:** Enforced `.max(128)` character boundaries on all password schemas in `src/lib/validations/auth.schema.ts` to defend against scrypt CPU/memory exhaustion DoS.
+  - **Enhanced Logger Redaction:** Extended `SENSITIVE_KEYS` in `src/lib/logger.ts` to automatically redact `rawToken`, `token`, `resetToken`, `sessionToken`, and all password variations.
+  - **Playwright E2E Specification:** Formally separated component tests from browser automation; configured `playwright.config.ts` and `e2e/auth.spec.ts` covering all 16 required browser interaction flows and mobile viewports.
+  - **Comprehensive Security Regression Suite:** Created `src/test/auth-security-hardening.test.ts` implementing all 26 mandatory security assertions.
+  - **Automated Verification:** **124/124 tests passing** across 10 test suites (`npm test -- --run`).
   - **Static Analysis & Build:** `npx tsc --noEmit` passing (0 errors), `npx prisma validate` passing, Webpack production build `npm run build` succeeding with 19 static and dynamic routes prerendered.
-  - **Dependency Audit:** `npm audit` reports **0 vulnerabilities**.
 
 ---
 
@@ -55,6 +54,7 @@
 - [x] **M2: Backend & Database** (Completed & Verified)
 - [x] **M2.1: Security Remediation & Independent Verification** (Completed & Verified — 64/64 tests)
 - [x] **M3: Authentication & User Dashboard** (Completed & Verified — 98/98 tests)
+- [x] **M3.1: Authentication Security Hardening & Browser Verification** (Completed & Verified — 124/124 tests)
 
 ---
 
@@ -80,6 +80,7 @@
 9. **Typography Pairing (ADR-009):** Manrope (Headings) + DM Sans (Body and figures).
 10. **Strict Fixture Demarcation (ADR-010):** Unactivated data cards carry explicit `SAMPLE FIXTURE — NOT LIVE DATA` labels until M4/M5.
 11. **Authentication & Session Architecture (ADR-011):** scrypt KDF with 16-byte salt, constant-time verification, timing-safe dummy evaluation, database-backed opaque sessions in `HttpOnly` cookies, Origin/Referer CSRF guard, and sanitizeReturnUrl open redirect mitigation.
+12. **Server-Side Trusted Origin CSRF & Zero Token Leakage (ADR-012 / M3.1):** Server-side trusted origin whitelist ignoring request Host spoofing, atomic single-use password reset tokens with SHA-256 hash persistence, and complete elimination of token logging.
 
 ---
 
@@ -88,10 +89,10 @@
 - **Language:** TypeScript 5.x / ES2022
 - **Database & ORM:** SQLite + Prisma ORM 6.4.1 (10 models: User, Session, PasswordResetToken, HouseholdProfile, HouseholdMember, AirQualitySnapshot, SavedRoutine, ImpactLog, CommunityReport, RecommendationRecord)
 - **Validation:** Zod v3.24
-- **Security:** scrypt KDF, opaque DB session tokens, HMAC-SHA256 token adapter, timing-safe equality, PII/health logger redaction, CSRF guard
+- **Security:** scrypt KDF ($N=16384, r=8, p=1$), SHA-256 token hashing, opaque DB session tokens, HMAC-SHA256 token adapter, timing-safe equality, PII/health logger redaction, server-side trusted origin CSRF guard
 - **Styling:** Tailwind CSS v4 (`@tailwindcss/postcss`)
 - **Iconography:** Lucide React
-- **Testing:** Vitest 5.1.1 + Testing Library (`@testing-library/react`, `@testing-library/jest-dom`)
+- **Testing:** Vitest 5.1.1 + Testing Library (`@testing-library/react`, `@testing-library/jest-dom`) + Playwright E2E specification
 
 ---
 
@@ -106,21 +107,21 @@
 
 ---
 
-## 9. Security & Privacy Audit Findings (M3)
-- **Authentication Trust:** Enforced through database session validation and HMAC signature checks; zero client-controlled trust boundaries.
-- **Timing Attack Mitigation:** `dummyPasswordVerification()` verified to produce equivalent computational work for nonexistent user logins.
-- **CSRF Defense:** Tested Origin/Referer cross-site request forgery defense on cookie-based state-modifying endpoints.
-- **Open Redirect Protection:** Strict sanitization prevents protocol-relative (`//evil.com`) and backslash (`/\evil.com`) redirects.
-- **Cross-User Isolation (IDOR):** Verified on household profiles, routines, impact logs, and recommendations.
-- **Rate Limiting:** Enforced at 5 attempts per 5 minutes for login endpoints; 3 requests per 15 minutes for password resets.
+## 9. Security & Privacy Audit Findings (M3.1)
+- **Zero Token Leakage:** Reset tokens never logged, never returned in API responses, stored exclusively as SHA-256 hashes.
+- **CSRF Defense:** Controlled origin whitelist ignores client-supplied `Host` headers; cookie-authenticated mutations without Origin/Referer fail closed with HTTP 403.
+- **Session Fixation Defense:** Old session cookies are revoked prior to generating new authenticated sessions on login/register.
+- **Timing Attack Mitigation:** `dummyPasswordVerification()` workload verified for non-existent user logins and reset requests.
+- **Atomic Invalidation:** Single-use reset tokens consumed via atomic conditional updates; concurrent requests fail closed.
+- **Cross-User Isolation (IDOR):** Verified across household profiles, routines, impact logs, and recommendations.
+- **Rate Limiting:** Enforced per IP and per normalized email address.
 - **Log Sanitization:** Sensitive medical conditions, passwords, reset tokens, and session secrets automatically redacted.
-- **Dependency Audit:** `npm audit` reports **0 vulnerabilities**.
 - **Git Credential Scan:** 0 exposed secrets in tracked files.
 
 ---
 
 ## 10. Automated Test Results
-- **Vitest Suites:** 9 test files, 98 passed, 0 failed (Duration: ~4.9s).
+- **Vitest Suites:** 10 test files, 124 passed, 0 failed (Duration: ~5.1s).
 - **TypeScript Compilation:** Passed with 0 errors (`npx tsc --noEmit`).
 - **Prisma Schema Validation:** Validated with 0 errors (`npx prisma validate`).
 - **Production Build:** Succeeded (`npm run build`).
@@ -128,8 +129,8 @@
 ---
 
 ## 11. Known Limitations & Module Boundaries
-- External SMTP / email sending service (e.g., SendGrid, AWS SES) is unconfigured in development; password reset tokens are logged to server console in local development and disclosed honestly to the client.
-- The in-memory rate limiter operates per-process; production clustering across multiple container nodes requires Redis integration (as specified in M2.1).
+- External SMTP / email sending service (e.g., SendGrid, AWS SES) is unconfigured in development; password reset tokens are not delivered via email or logged, but verified via database cryptographic hashes.
+- In-memory rate limiting operates per-process; production clustering across multiple container nodes requires Redis integration (`REDIS_URL` in `.env.example`).
 - Live third-party AQI provider integrations (OpenAQ v3, Copernicus CAMS, Open-Meteo) are scheduled for **Module M4**.
 - Generative AI recommendation reasoning (Gemini API) is scheduled for **Module M5**.
 

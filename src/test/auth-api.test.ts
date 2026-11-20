@@ -299,7 +299,9 @@ describe('Authentication API & Route Handlers (M3 Phase 3 & 4)', () => {
       const resetJson = await resetRes.json();
 
       expect(resetRes.status).toBe(200);
-      expect(resetJson.data.emailDeliveryConfigured).toBe(false); // Honest disclosure
+      expect(resetJson.data.message).toContain('If an account exists');
+      expect(resetJson.data.token).toBeUndefined();
+      expect(resetJson.data.rawToken).toBeUndefined();
 
       // 2. Fetch the generated token directly from DB for verification
       const user = await prisma.user.findUnique({ where: { email } });
@@ -308,6 +310,7 @@ describe('Authentication API & Route Handlers (M3 Phase 3 & 4)', () => {
       });
       expect(resetRecord).not.toBeNull();
       expect(resetRecord?.usedAt).toBeNull();
+      expect(resetRecord?.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     });
   });
 });
