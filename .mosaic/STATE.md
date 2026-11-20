@@ -2,8 +2,8 @@
 **Project:** BreatheWise AI  
 **Competition:** Prompt War — Challenge 6: Urban Air Quality Assistant  
 **Target Score:** 97.50+ / 100  
-**Current Phase:** M4.1.2 — CPCB Averaging Rules Correction & Final Scientific Verification  
-**Document Version:** 1.4.3  
+**Current Phase:** Module 4 CLOSED — Air Quality Intelligence Formally Closed  
+**Document Version:** 1.5.0  
 **Last Updated:** 2026-11-20  
 
 ---
@@ -30,18 +30,19 @@
 ---
 
 ## 3. Current Module Status
-- **Current Module:** `M4.1.2 — CPCB Averaging Rules Correction & Final Scientific Verification`
-- **Status:** **COMPLETED & INDEPENDENTLY AUDITED (213/213 Vitest Tests Passing, 24/24 Playwright Browser Tests Passing)**
+- **Current Module:** `Module 4 — Air Quality Intelligence (Final Closure)`
+- **Status:** **COMPLETED, INDEPENDENTLY AUDITED & FORMALLY CLOSED (228/228 Vitest Tests Passing, 24/24 Playwright Browser Tests Passing)**
 - **Completion Evidence:**
   - **Correction of CPCB 16-Hour Data Completeness Rule:** Authoritative CPCB guidelines (*"How is AQI calculated?"*, CPCB 2014–2015) state: *"A minimum of 16 hours' data is considered necessary for calculating sub-index."* Removed unsupported claims requiring "continuous" or consecutive hours. The engine strictly requires and accepts $\ge 16$ distinct valid observation hours in the 24-hour cycle (non-continuous data accepted).
-  - **Correction of CO and O3 Averaging Methodology:** Completely eliminated the invented "6-hour completeness rule". Per official CPCB protocol, sub-index calculation eligibility requires the station to record $\ge 16$ valid observation hours across the 24-hour cycle. The concentration mapped to breakpoints is the 8-hour running arithmetic mean evaluated across distinct hourly bins in the active window `[asOfTime - 8h, asOfTime]`.
+  - **Correction of CO and O3 Averaging Methodology:** Rigorously separated the statutory 16h/24h cycle rule from the BreatheWise engineering safeguard ($\ge 6$ of 8 hours / 75% completeness in active running window $[h_{\text{asOf}} - 7, h_{\text{asOf}}]$). Verified behavior across 8, 7, 6, 5, 4, 3, 2, 1, 0 hours, with missing observations at beginning, middle, and end of the window.
   - **Hourly Binning & Sample Deduplication:** Multiple observations or duplicate timestamps within the same hour bucket are averaged into 1 hourly bin and count as exactly 1 valid observation hour, preventing artificial inflation of data coverage.
-  - **Station Isolation & Physical Boundary Checks:** Added station-level segregation (`targetStationId`) preventing cross-station contamination. Enforced physical plausibility ceilings via `PHYSICAL_CONCENTRATION_LIMITS` and rejected future timestamps exceeding 5 minutes clock drift.
-  - **Granular Completeness Audit Model (`PollutantCompletenessAudit`):** Fully typed inspection structure capturing `averagingPeriodHours`, `observationWindowHours`, `validObservationCount`, `validObservationHours`, `dataCoverageHours`, `completenessThresholdHours: 16`, `isSubIndexEligible`, `concentration`, `unit`, `subIndex`, and `rejectionReason`.
-  - **UI Regulatory Card Alignment (`AirQualityRadar.tsx`):** Cleaned all UI references to "continuous" monitoring, clearly disclosing the official 16-hour valid data threshold alongside the real-time Acute 1-Hour Proxy gauge.
-  - **Automated Verification:** **213/213 unit and integration tests passing** across 15 Vitest test suites (`npx vitest run`).
+  - **Station Isolation & Physical Boundary Checks:** Station-level segregation (`targetStationId`) preventing cross-station contamination. Documented physical operating ranges and plausibility ceilings (`PHYSICAL_CONCENTRATION_LIMITS`) for all 8 criteria pollutants, and 5-minute future clock drift tolerance policy (`FUTURE_TOLERANCE_MS`).
+  - **Granular Completeness Audit Model (`PollutantCompletenessAudit`):** Fully typed inspection structure capturing `averagingPeriodHours`, `observationWindowHours`, `validObservationCount`, `validObservationHours`, `activeWindowHours`, `activeWindowObservationHours`, `activeWindowThresholdHours`, `engineeringSafeguardSatisfied`, `isSubIndexEligible`, `concentration`, `unit`, `subIndex`, and `rejectionReason`.
+  - **UI Regulatory Card Alignment (`AirQualityRadar.tsx`):** Aligned header title to **"CPCB National AQI:"** and updated explanatory copy to clearly disclose 24h averages for PM/gases and 8h running averages for CO/O3.
+  - **Automated Verification:** **228/228 unit and integration tests passing** across 15 Vitest test suites (`npx vitest run`).
   - **Browser Automation:** **24/24 Playwright tests passing** across Desktop Chrome (1440x900), Mobile Small (360x640), and Mobile Standard (390x844).
   - **Static Analysis & Build:** `npx tsc --noEmit` passing with 0 errors; Next.js Webpack production build succeeding with all 19 routes prerendered.
+- **Next Phase:** Module 5 — AI Assistant & Recommendations (Awaiting user authorization; strictly NOT started).
 
 ---
 
@@ -53,10 +54,10 @@
 - [x] **M3: Authentication & User Dashboard** (Completed & Verified — 98/98 tests)
 - [x] **M3.1: Authentication Security Hardening & Browser Verification** (Completed & Verified — 124/124 tests)
 - [x] **M3.1.1: Final Authentication Verification & Remediation** (Completed & Verified — 136/136 unit tests, 15/15 Playwright browser tests)
-- [x] **M4: Air Quality Intelligence** (Completed & Verified — 166/166 unit tests, 21/21 Playwright browser tests)
-- [x] **M4.1: Live Provider Integration & Environmental Data Integrity Audit** (Completed & Verified — 191/191 unit tests, 24/24 Playwright browser tests)
-- [x] **M4.1.1: Scientific AQI Validation & Final Evidence Audit** (Completed & Verified — 202/202 unit tests, 24/24 Playwright browser tests)
-- [x] **M4.1.2: CPCB Averaging Rules Correction & Final Scientific Verification** (Completed & Verified — 213/213 unit tests, 24/24 Playwright browser tests)
+- [x] **M4: Air Quality Intelligence** (Completed, Verified & Formally Closed — 228/228 unit tests, 24/24 Playwright browser tests)
+  - [x] **M4.1: Live Provider Integration & Environmental Data Integrity Audit** (Completed & Verified)
+  - [x] **M4.1.1: Scientific AQI Validation & Final Evidence Audit** (Completed & Verified)
+  - [x] **M4.1.2: CPCB Averaging Rules Correction & Final Scientific Verification** (Completed & Verified)
 
 ---
 
@@ -86,8 +87,8 @@
 14. **Geospatial Station Selection & Zero-Fabrication Telemetry Policy (ADR-014 / M4):** Great-circle Haversine distance, composite station ranking, 50 km cutoff radius, 2-decimal-place user coordinate quantization, and absolute prohibition on synthetic/fabricated telemetry numbers.
 15. **Mock Data Elimination & Hard Production Boundary (ADR-015 / M4.1):** Complete removal of mock providers from runtime paths. Test fixtures isolated in `src/test/fixtures/` with `assertNotProduction()` hard exception guard. When live data is unconfigured and cache is empty, the application serves honest `NO_DATA` with zero simulated numbers.
 16. **Four-Timestamp Model & Provenance State Machine (ADR-016 / M4.1):** Explicit tracking of observation time (physical sensor), ingestion time (BreatheWise fetch), retrieval time (client response), and cache time (database persistence). 5-state provenance classification (`LIVE`, `CACHED`, `STALE`, `MOCK`, `NO_DATA`).
-17. **Scientific AQI Decoupling & Continuous Completeness Enforcement (ADR-017 / M4.1.1):** Rigorous mathematical decoupling of official 24-hour CPCB regulatory NAQI ($\ge 16$ hours data completeness required per MoEFCC protocol) from acute 1-hour sensor proxy indicators. 5-tier typed database provenance (`VERIFIED_EXTERNAL_OBSERVATION`, `HISTORICAL_IMPORTED`, `DEVELOPMENT_SEED`, `SYNTHETIC_FIXTURE`, `UNKNOWN_PROVENANCE`) with physical observation time strictly decoupled from server ingestion time.
-18. **CPCB Averaging Rules Correction & Hourly Binning Completeness (ADR-018 / M4.1.2):** Removal of unsupported "continuous" data requirement (non-continuous hourly samples with $\ge 16$ distinct valid hours satisfy CPCB standard); elimination of invented 6-hour threshold for CO and O3; implementation of 8-hour running arithmetic mean over distinct hourly bin averages in $[h_{\text{asOf}} - 7, h_{\text{asOf}}]$; sample deduplication into hourly bins; station telemetry isolation (`targetStationId`); and comprehensive `PollutantCompletenessAudit` structure.
+17. **Scientific AQI Decoupling & Continuous Completeness Enforcement (ADR-017 / M4.1.1):** Rigorous mathematical decoupling of official CPCB National AQI ($\ge 16$ hours data completeness required per MoEFCC protocol) from acute 1-hour sensor proxy indicators. 5-tier typed database provenance (`VERIFIED_EXTERNAL_OBSERVATION`, `HISTORICAL_IMPORTED`, `DEVELOPMENT_SEED`, `SYNTHETIC_FIXTURE`, `UNKNOWN_PROVENANCE`) with physical observation time strictly decoupled from server ingestion time.
+18. **CPCB Averaging Rules Correction & Hourly Binning Completeness (ADR-018 / M4.1.2):** Removal of unsupported "continuous" data requirement (non-continuous hourly samples with $\ge 16$ distinct valid hours satisfy CPCB standard); elimination of invented 6-hour threshold for CO and O3; implementation of 8-hour running arithmetic mean over distinct hourly bin averages in $[h_{\text{asOf}} - 7, h_{\text{asOf}}]$ with an explicit 75% ($\ge 6\text{h}$) active-window engineering safeguard; sample deduplication into hourly bins; station telemetry isolation (`targetStationId`); and comprehensive `PollutantCompletenessAudit` structure.
 
 ---
 

@@ -32,7 +32,7 @@ import {
   ShortTermAirQualityIndicator,
   PollutantCompletenessAudit,
 } from './types';
-import { PHYSICAL_CONCENTRATION_LIMITS } from './measurement-validator';
+import { PHYSICAL_CONCENTRATION_LIMITS, FUTURE_TOLERANCE_MS } from './measurement-validator';
 
 export interface CpcbBreakpoint {
   bpl: number;      // Breakpoint Low concentration
@@ -438,7 +438,7 @@ export function calculateOfficialCpcbAqi(
   const asOfMs = asOfTime.getTime();
   const window24hMs = 24 * 60 * 60 * 1000;
   const window8hMs = 8 * 60 * 60 * 1000;
-  const maxFutureDriftMs = 5 * 60 * 1000; // 5 min future clock skew tolerance
+  const maxFutureDriftMs = FUTURE_TOLERANCE_MS; // Configurable engineering clock tolerance policy (default 5 min)
 
   // Sort samples chronologically
   const sortedSamples = [...hourlySamples].sort((a, b) => {
@@ -742,7 +742,7 @@ export function calculateShortTermIndicator(
 
   const sufficiency = checkCpcbDataSufficiency(validPollutants);
   const averagingNotice =
-    'Short-Term Air Quality Indicator (1-Hour Acute Proxy): Acute 1-hour sensor concentrations evaluated against CPCB breakpoints for immediate exposure mitigation. Does not represent certified 24-hour CPCB regulatory compliance.';
+    'Short-Term Air Quality Indicator (1-Hour Acute Proxy): Acute 1-hour sensor concentrations evaluated against CPCB breakpoints for immediate exposure mitigation. Does not represent certified CPCB National AQI composite compliance.';
 
   if (!sufficiency.isSufficient) {
     return {

@@ -253,6 +253,109 @@ describe('M4.1.2 Final Independent Acceptance Audit & CPCB Verification', () => 
       }
     });
 
+    /**
+     * Helper to test custom hourly observation patterns in the active 8-hour window [baseDate - 7h, baseDate].
+     * activeHours is an array of hour offsets (0 = current hour / end, 7 = 7 hours ago / beginning).
+     * The remaining hours up to totalCycleHoursNeeded are placed outside the active window (hours 8..23)
+     * so that the CPCB 16-hour 24h cycle rule is satisfied.
+     */
+    function buildWindowPatternSamples(
+      activeHours: number[],
+      activeConcentration = 2.0,
+      totalCycleHoursNeeded = 16
+    ): HourlySampleInput[] {
+      const samples: HourlySampleInput[] = [];
+      // Active window hours
+      for (const h of activeHours) {
+        const time = new Date(baseDate.getTime() - h * 60 * 60 * 1000);
+        samples.push(
+          { pollutant: 'CO', value: activeConcentration, unit: 'mg/m³', measurementTimestamp: time },
+          { pollutant: 'O3', value: 60, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'PM2.5', value: 75, unit: 'µg/m³', measurementTimestamp: time }
+        );
+      }
+      // Fill remaining cycle hours outside active window (h = 8..23) to satisfy statutory 16h rule
+      let outsideH = 8;
+      while (samples.filter(s => s.pollutant === 'CO').length < totalCycleHoursNeeded && outsideH <= 23) {
+        const time = new Date(baseDate.getTime() - outsideH * 60 * 60 * 1000);
+        samples.push(
+          { pollutant: 'CO', value: 4.0, unit: 'mg/m³', measurementTimestamp: time },
+          { pollutant: 'O3', value: 120, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'PM2.5', value: 75, unit: 'µg/m³', measurementTimestamp: time }
+        );
+        outsideH++;
+      }
+      return samples;
+    }
+
+    it('demonstrates missing observations at BEGINNING of active 8h window (hours 6, 7 missing; hours 0-5 present): APPROVED under 75% safeguard', () => {
+      // Hours 6 and 7 (oldest in 8h window) missing; hours 0, 1, 2, 3, 4, 5 present (6 valid hours)
+      const samples = buildWindowPatternSamples([0, 1, 2, 3, 4, 5]);
+      const result = calculateOfficialCpcbAqi(samples, baseDate);
+
+      const coAudit = result.pollutantAudits?.['CO'];
+      expect(coAudit?.validObservationHours).toBe(16); // 24h statutory cycle satisfied
+      expect(coAudit?.activeWindowObservationHours).toBe(6); // 6/8 in active window
+      expect(coAudit?.engineeringSafeguardSatisfied).toBe(true);
+      expect(coAudit?.isSubIndexEligible).toBe(true);
+      expect(coAudit?.concentration).toBe(2.0); // Exact running mean over 6 present hours
+      expect(result.subIndices['CO']).not.toBeNull();
+    });
+
+    it('demonstrates missing observations in MIDDLE of active 8h window (hours 3, 4 missing; hours 0, 1, 2, 5, 6, 7 present): APPROVED under 75% safeguard', () => {
+      // Hours 3 and 4 missing; hours 0, 1, 2, 5, 6, 7 present (6 valid hours)
+      const samples = buildWindowPatternSamples([0, 1, 2, 5, 6, 7]);
+      const result = calculateOfficialCpcbAqi(samples, baseDate);
+
+      const coAudit = result.pollutantAudits?.['CO'];
+      expect(coAudit?.validObservationHours).toBe(16);
+      expect(coAudit?.activeWindowObservationHours).toBe(6);
+      expect(coAudit?.engineeringSafeguardSatisfied).toBe(true);
+      expect(coAudit?.isSubIndexEligible).toBe(true);
+      expect(coAudit?.concentration).toBe(2.0);
+      expect(result.subIndices['CO']).not.toBeNull();
+    });
+
+    it('demonstrates missing observations at END of active 8h window (hours 0, 1 missing; hours 2-7 present): APPROVED under 75% safeguard', () => {
+      // Hours 0 and 1 (most recent in window) missing; hours 2, 3, 4, 5, 6, 7 present (6 valid hours)
+      const samples = buildWindowPatternSamples([2, 3, 4, 5, 6, 7]);
+      const result = calculateOfficialCpcbAqi(samples, baseDate);
+
+      const coAudit = result.pollutantAudits?.['CO'];
+      expect(coAudit?.validObservationHours).toBe(16);
+      expect(coAudit?.activeWindowObservationHours).toBe(6);
+      expect(coAudit?.engineeringSafeguardSatisfied).toBe(true);
+      expect(coAudit?.isSubIndexEligible).toBe(true);
+      expect(coAudit?.concentration).toBe(2.0);
+      expect(result.subIndices['CO']).not.toBeNull();
+    });
+
+    it('demonstrates deficient observations (5 hours present) at BEGINNING, MIDDLE, and END of active 8h window: REJECTED by engineering safeguard', () => {
+      // 1. Deficient at beginning (hours 5, 6, 7 missing; hours 0, 1, 2, 3, 4 present = 5 hours)
+      const samplesBegDeficient = buildWindowPatternSamples([0, 1, 2, 3, 4]);
+      const resBeg = calculateOfficialCpcbAqi(samplesBegDeficient, baseDate);
+      expect(resBeg.pollutantAudits?.['CO']?.activeWindowObservationHours).toBe(5);
+      expect(resBeg.pollutantAudits?.['CO']?.engineeringSafeguardSatisfied).toBe(false);
+      expect(resBeg.pollutantAudits?.['CO']?.isSubIndexEligible).toBe(false);
+      expect(resBeg.subIndices['CO']).toBeNull();
+
+      // 2. Deficient in middle (hours 2, 3, 4 missing; hours 0, 1, 5, 6, 7 present = 5 hours)
+      const samplesMidDeficient = buildWindowPatternSamples([0, 1, 5, 6, 7]);
+      const resMid = calculateOfficialCpcbAqi(samplesMidDeficient, baseDate);
+      expect(resMid.pollutantAudits?.['CO']?.activeWindowObservationHours).toBe(5);
+      expect(resMid.pollutantAudits?.['CO']?.engineeringSafeguardSatisfied).toBe(false);
+      expect(resMid.pollutantAudits?.['CO']?.isSubIndexEligible).toBe(false);
+      expect(resMid.subIndices['CO']).toBeNull();
+
+      // 3. Deficient at end (hours 0, 1, 2 missing; hours 3, 4, 5, 6, 7 present = 5 hours)
+      const samplesEndDeficient = buildWindowPatternSamples([3, 4, 5, 6, 7]);
+      const resEnd = calculateOfficialCpcbAqi(samplesEndDeficient, baseDate);
+      expect(resEnd.pollutantAudits?.['CO']?.activeWindowObservationHours).toBe(5);
+      expect(resEnd.pollutantAudits?.['CO']?.engineeringSafeguardSatisfied).toBe(false);
+      expect(resEnd.pollutantAudits?.['CO']?.isSubIndexEligible).toBe(false);
+      expect(resEnd.subIndices['CO']).toBeNull();
+    });
+
     it('rejection if CPCB 24h cycle rule is NOT met (< 16h total) even if 8h active window is full (8/8)', () => {
       const samples: HourlySampleInput[] = [];
       // Full 8 hours in active window, but NO OTHER hours in 24h cycle (total 8 < 16)

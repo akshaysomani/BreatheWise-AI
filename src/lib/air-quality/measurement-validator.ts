@@ -78,16 +78,24 @@ export const PHYSICAL_CONCENTRATION_LIMITS: Record<PollutantCode, { max: number;
 export const PHYSICAL_CONCENTRATION_CEILINGS = PHYSICAL_CONCENTRATION_LIMITS;
 
 /**
- * Future clock drift tolerance: 5 minutes (300,000 ms).
+ * Future clock drift tolerance: 5 minutes (300,000 ms) default, configurable.
  * 
- * TECHNICAL JUSTIFICATION:
- * In distributed CAAQMS monitoring networks and IoT edge stations, telemetry loggers use NTP daemon sync.
- * Normal network latency, jitter, and RTC clock drift between sensor loggers and ingestion servers typically
- * remain within 1-2 seconds. A 5-minute tolerance window is the industry standard (aligned with Kerberos,
- * AWS Signature v4, and OAuth 2.0 clock skew thresholds). Any observation timestamp > 5 minutes in the future
- * indicates misconfigured edge RTC clocks, unparsed timezone offsets, or telemetry corruption.
+ * SCIENTIFIC & TECHNICAL TELEMETRY BASIS (ENGINEERING POLICY):
+ * In ambient air quality monitoring networks (CPCB CAAQMS, State PCBs, and OpenAQ telemetry streams):
+ * 1. Station Data Acquisition Systems (DAS) and data loggers (e.g., Campbell Scientific, Envea, Teledyne)
+ *    poll physical analyzers and log hourly averages.
+ * 2. Edge loggers synchronize clocks periodically via cellular/broadband NTP daemons. Network jitter,
+ *    temporary cellular lag, and uncompensated crystal oscillator drift can cause edge timestamps to lead
+ *    or lag server ingestion clocks by seconds.
+ * 3. This 5-minute window is an explicit BREATHEWISE ENGINEERING POLICY (not a statutory CPCB rule, as CPCB
+ *    does not specify clock skew tolerances for public consumer APIs).
+ * 4. Any observation timestamp exceeding this tolerance is rejected from official AQI calculations
+ *    (preventing future-dated records from polluting rolling windows), while preserving the raw reading
+ *    and rejection reason for transparent auditability.
  */
-export const FUTURE_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes max clock drift allowed
+export const FUTURE_TOLERANCE_MS = (typeof process !== 'undefined' && process.env?.FUTURE_TIMESTAMP_TOLERANCE_MS)
+  ? parseInt(process.env.FUTURE_TIMESTAMP_TOLERANCE_MS, 10)
+  : 5 * 60 * 1000;
 
 /**
  * Validates a single incoming pollutant measurement from an upstream provider.
