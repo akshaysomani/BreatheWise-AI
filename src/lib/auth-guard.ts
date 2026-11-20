@@ -1,7 +1,11 @@
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
 import prisma from '@/lib/db';
-import { validateDatabaseSession, SESSION_COOKIE_NAME } from './session';
+import {
+  createDatabaseSession,
+  validateDatabaseSession,
+  SESSION_COOKIE_NAME,
+} from './session';
 
 export interface AuthenticatedUser {
   id: string;
@@ -11,23 +15,16 @@ export interface AuthenticatedUser {
 }
 
 export interface SessionPayload {
-  sub: string; // User ID
+  sub: string;
   email: string;
   role: string;
-  exp: number; // Expiry timestamp (epoch seconds)
-  iat: number; // Issued at timestamp (epoch seconds)
+  exp: number;
+  iat: number;
 }
 
-/**
- * Server-side Secret for Cryptographic Session Verification.
- * Reads from process.env.SESSION_SECRET with a hardened fallback for local testing.
- */
 const SESSION_SECRET =
   process.env.SESSION_SECRET || 'local-dev-session-secret-breathewise-ai-32-chars-minimum';
 
-/**
- * Base64URL encoding helper.
- */
 function base64UrlEncode(str: string): string {
   return Buffer.from(str)
     .toString('base64')
@@ -36,9 +33,6 @@ function base64UrlEncode(str: string): string {
     .replace(/\//g, '_');
 }
 
-/**
- * Base64URL decoding helper.
- */
 function base64UrlDecode(str: string): string {
   let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
   while (base64.length % 4) {
@@ -47,9 +41,6 @@ function base64UrlDecode(str: string): string {
   return Buffer.from(base64, 'base64').toString('utf8');
 }
 
-/**
- * Generates an HMAC-SHA256 cryptographic signature.
- */
 function createSignature(data: string, secret: string): string {
   return crypto
     .createHmac('sha256', secret)
@@ -60,17 +51,14 @@ function createSignature(data: string, secret: string): string {
     .replace(/\//g, '_');
 }
 
-/**
- * Securely compares two signatures in constant time to prevent timing attacks.
- */
 function constantTimeEquals(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
 /**
- * Signs a session payload into a cryptographically verified token.
- * Format: v1.<base64UrlPayload>.<hmacSignature>
+ * Pure cryptographic HMAC token signer.
+ * Deprecated for authorization in M3.1.1: Stateless tokens lack immediate revocation on logout.
  */
 export function createSessionToken(
   user: { id: string; email: string; role?: string },
@@ -92,35 +80,32 @@ export function createSessionToken(
 }
 
 /**
- * Verifies a cryptographic session token and returns the authenticated user.
- * Fails closed on forged, tampered, expired, or malformed tokens.
+ * Pure cryptographic HMAC token verifier.
+ * Returns null if token is malformed, expired, or tampered.
  */
 export function verifySessionToken(token: string): AuthenticatedUser | null {
   if (!token || typeof token !== 'string') return null;
 
   const parts = token.trim().split('.');
   if (parts.length !== 3 || parts[0] !== 'v1') {
-    return null; // Invalid token structure
+    return null;
   }
 
   const [, encodedPayload, signature] = parts;
   if (!encodedPayload || !signature) return null;
 
-  // 1. Verify cryptographic HMAC signature
   const expectedSignature = createSignature(encodedPayload, SESSION_SECRET);
   if (!constantTimeEquals(signature, expectedSignature)) {
-    return null; // Forged or tampered token
+    return null;
   }
 
-  // 2. Decode and parse payload
   try {
     const rawPayload = base64UrlDecode(encodedPayload);
     const payload: SessionPayload = JSON.parse(rawPayload);
 
-    // 3. Verify expiry timestamp
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) {
-      return null; // Expired token
+      return null;
     }
 
     if (!payload.sub || typeof payload.sub !== 'string') {
@@ -133,90 +118,75 @@ export function verifySessionToken(token: string): AuthenticatedUser | null {
       role: payload.role || 'USER',
     };
   } catch {
-    return null; // Invalid JSON or corrupted payload
+    return null;
   }
 }
 
 /**
- * Secure Server-Side Identity Boundary for BreatheWise AI (M3 Dual Adapter).
+ * Secure Server-Side Identity Boundary for BreatheWise AI (M3.1.1 Canonical Architecture).
  * 
- * Supports:
- * 1. Primary Browser Session: HttpOnly cookie (`breathewise_session`) validated against DB `Session` table.
- * 2. API Bearer Token:
- *    - Opaque 64-char hex token: validated against DB `Session` table.
- *    - Signed HMAC token (`v1.<payload>.<sig>`): verified cryptographically.
- * 
- * SECURITY INVARIANTS:
- * - NEVER trusts raw client-supplied headers like `x-authenticated-user-id`.
- * - Forged, expired, or unverified sessions fail closed with `null`.
+ * ARCHITECTURAL SPECIFICATION:
+ * - Unified on database-backed opaque 256-bit session tokens (`Session` model in Prisma/SQLite).
+ * - Supported Credentials:
+ *   1. Web Browser: `breathewise_session` HttpOnly, SameSite=Lax cookie.
+ *   2. API Client / CLI: `Authorization: Bearer <sessionToken>` header.
+ * - SECURITY INVARIANTS:
+ *   - Stateless, unrevocable bearer tokens (`v1.<payload>.<sig>`) are retired and rejected with 401.
+ *   - Instant Revocation: Calling `POST /api/auth/logout` deletes the session from the database,
+ *     ensuring immediate revocation across both browser and Bearer API requests.
+ *   - Immediate Credential Invalidation: Password reset deletes all user sessions atomically.
+ *   - User Lifecycle & Cascades: If a user is deleted, their sessions are cascade-deleted immediately.
+ *   - Real-Time Role Enforcement: User role is read from the live database record on every request.
+ *   - Zero Client Identity Trust: Never inspects client-supplied identity headers (`x-authenticated-user-id`).
  */
 export async function getSessionUser(req: NextRequest): Promise<AuthenticatedUser | null> {
+  let sessionToken: string | null = null;
+
   // 1. Inspect Session Cookie (Browser flow)
-  const sessionCookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
-  if (sessionCookie) {
-    const dbSession = await validateDatabaseSession(sessionCookie);
-    if (dbSession && dbSession.user) {
-      return {
-        id: dbSession.user.id,
-        email: dbSession.user.email,
-        name: dbSession.user.name,
-        role: dbSession.user.role,
-      };
-    }
+  const cookieValue = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+  if (cookieValue) {
+    sessionToken = cookieValue.trim();
   }
 
-  // 2. Inspect Authorization Header (API / Test client flow)
-  const authHeader = req.headers.get('authorization');
-  if (authHeader) {
-    const trimmed = authHeader.trim();
-    if (trimmed.startsWith('Bearer ')) {
-      const token = trimmed.substring(7).trim();
-      if (!token) return null;
-
-      // Case A: Signed HMAC token (Service-to-Service / Test client flow)
-      if (token.startsWith('v1.')) {
-        const verifiedTokenUser = verifySessionToken(token);
-        if (!verifiedTokenUser) return null;
-
-        // Verify active user existence in database to prevent deleted/suspended user access
-        const dbUser = await prisma.user.findUnique({
-          where: { id: verifiedTokenUser.id },
-          select: { id: true, email: true, name: true, role: true },
-        });
-        if (!dbUser) return null;
-
-        return {
-          id: dbUser.id,
-          email: dbUser.email,
-          name: dbUser.name,
-          role: dbUser.role,
-        };
-      }
-
-      // Case B: Opaque DB session token
-      const dbSession = await validateDatabaseSession(token);
-      if (dbSession && dbSession.user) {
-        return {
-          id: dbSession.user.id,
-          email: dbSession.user.email,
-          name: dbSession.user.name,
-          role: dbSession.user.role,
-        };
+  // 2. Inspect Authorization Header (API / CLI / Test client flow)
+  if (!sessionToken) {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader) {
+      const trimmed = authHeader.trim();
+      if (trimmed.startsWith('Bearer ')) {
+        sessionToken = trimmed.substring(7).trim();
       }
     }
   }
 
-  return null;
+  if (!sessionToken) {
+    return null; // Fail closed on missing credentials
+  }
+
+  // 3. Reject deprecated stateless tokens (fail closed)
+  if (sessionToken.startsWith('v1.')) {
+    return null;
+  }
+
+  // 4. Validate opaque session token against database Session table
+  const dbSession = await validateDatabaseSession(sessionToken);
+  if (!dbSession || !dbSession.user) {
+    return null; // Expired, revoked, or non-existent session
+  }
+
+  return {
+    id: dbSession.user.id,
+    email: dbSession.user.email,
+    name: dbSession.user.name,
+    role: dbSession.user.role,
+  };
 }
 
 /**
- * Test helper: Generates an Authorization header containing a valid cryptographic token.
+ * Generates an Authorization header containing a valid database-backed session token.
+ * Canonical helper for tests and automated clients.
  */
-export function createTestAuthHeader(
-  userId: string,
-  email = `${userId}@breathewise.local`,
-  role = 'USER'
-): string {
-  const token = createSessionToken({ id: userId, email, role });
-  return `Bearer ${token}`;
+export async function createTestAuthHeader(userId: string): Promise<string> {
+  const { sessionToken } = await createDatabaseSession(userId);
+  return `Bearer ${sessionToken}`;
 }

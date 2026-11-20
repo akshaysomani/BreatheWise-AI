@@ -55,16 +55,29 @@ In Module M2.1, a cryptographic token verification interface was established to 
 
 ### 3. Database Schema Changes
 Add two models to `prisma/schema.prisma`:
-1. `Session`: Stores `id`, `sessionToken` (unique), `userId`, `expiresAt`, `createdAt`, `userAgent`, `ipAddress`.
-2. `PasswordResetToken`: Stores single-use, time-limited reset tokens hashed with SHA-256.
+1. `Session`: Stores `id`, `sessionToken` (unique SHA-256 hash or opaque hex), `userId`, `expiresAt`, `createdAt`, `userAgent`, `ipAddress`.
+2. `PasswordResetToken`: Stores single-use, time-limited reset tokens hashed with SHA-256 (`usedAt` nullable timestamp).
 
 ---
 
-### 4. Consequences
+### 4. M3.1.1 Security Hardening Amendment: Bearer Token Canonical Session Unification
+- **Vulnerability Identified in Stateless Tokens:** Stateless HMAC tokens (`v1.<payload>.<sig>`) cannot be immediately revoked upon logout without maintaining a stateful blacklist.
+- **Canonical Boundary Decision:**
+  1. All authentication (browser cookie `breathewise_session` and API `Authorization: Bearer <token>`) is canonically unified on the database-backed opaque `Session` table.
+  2. Stateless `v1.` tokens are formally deprecated and rejected with HTTP 401 (fail closed).
+  3. Immediate Revocation: Calling `POST /api/auth/logout` via either cookie or Bearer token immediately deletes the session record from the database.
+  4. Real-Time RBAC: User role is read from the live database record on each request, ensuring role demotions or suspensions take effect immediately without token expiration lag.
+  5. Atomic Invalidation: Password reset deletes all active user sessions atomically in the same database transaction.
+  6. Server-Controlled Origin Whitelist: CSRF validation resolves allowed origins strictly from environment configuration (`TRUSTED_ORIGINS`), never trusting incoming `Host` or `X-Forwarded-Host` headers.
+
+---
+
+### 5. Consequences
 - **Positive:**
   - True zero-trust architecture: sessions are revocable, opaque, and server-managed.
+  - Immediate logout invalidation for both browser and API Bearer requests.
   - Zero external C++ native build dependencies on Windows.
   - Full adherence to OWASP ASVS v4.0 and NIST SP 800-53 standards.
-  - Clean separation between browser cookie sessions and API Bearer tokens.
+  - Clean unified authorization path via `getSessionUser(req)`.
 - **Trade-offs:**
   - Database lookup on authenticated requests (mitigated by indexed `sessionToken` and SQLite in-process read latency <1ms).

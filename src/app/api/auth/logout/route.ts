@@ -14,10 +14,11 @@ export async function POST(req: NextRequest) {
         ? authHeader.trim().substring(7).trim()
         : null;
 
-    const tokenToInvalidate = sessionCookie || bearerToken;
-
-    if (tokenToInvalidate) {
-      await invalidateDatabaseSession(tokenToInvalidate);
+    if (sessionCookie) {
+      await invalidateDatabaseSession(sessionCookie);
+    }
+    if (bearerToken && bearerToken !== sessionCookie) {
+      await invalidateDatabaseSession(bearerToken);
     }
 
     const response = apiSuccess({

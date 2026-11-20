@@ -15,37 +15,44 @@ import { test, expect } from '@playwright/test';
  */
 
 test.describe('BreatheWise AI Authentication & Dashboard Browser Flows', () => {
-  const timestamp = Date.now();
-  const testUser = {
-    name: 'Browser Verification User',
-    email: `browser_e2e_${timestamp}@breathewise.test`,
-    password: 'SecurePassword123!',
-  };
+  let testIp = '10.99.1.1';
+
+  test.beforeEach(async ({ context }) => {
+    testIp = `10.99.${Math.floor(Math.random() * 200 + 1)}.${Math.floor(Math.random() * 200 + 1)}`;
+    await context.setExtraHTTPHeaders({
+      'x-forwarded-for': testIp,
+    });
+  });
 
   test('Flows 1-10: Registration, Dashboard Access, Session Persistence, Logout, and Middleware Protection', async ({ page }) => {
+    const testUser = {
+      name: 'Browser Verification User',
+      email: `browser_e2e_${Date.now()}_${Math.random().toString(36).substring(7)}@breathewise.test`,
+      password: 'SecurePassword123!',
+    };
+
     // 1. Open registration page
     await page.goto('/register');
     await expect(page).toHaveTitle(/Register|BreatheWise/i);
-    await expect(page.locator('h1')).toContainText(/Create your account/i);
+    await expect(page.locator('h1')).toContainText(/Create.*Account/i);
 
     // 2. Fill registration form
-    await page.fill('input#name', testUser.name);
-    await page.fill('input#email', testUser.email);
-    await page.fill('input#password', testUser.password);
-    await page.fill('input#confirmPassword', testUser.password);
+    await page.fill('input#register-name', testUser.name);
+    await page.fill('input#register-email', testUser.email);
+    await page.fill('input#register-password', testUser.password);
+    await page.fill('input#register-confirm-password', testUser.password);
 
     // 3. Submit registration form
-    await page.click('button[type="submit"]');
+    await page.click('form button[type="submit"]');
 
     // 4. Verify successful redirection to /dashboard
     await page.waitForURL('**/dashboard', { timeout: 10_000 });
     await expect(page.locator('h1')).toContainText(/Welcome/i);
-    await expect(page.locator('text=Personal Dashboard')).toBeVisible();
 
     // 5. Refresh dashboard and verify session persistence
     await page.reload();
     await expect(page.locator('h1')).toContainText(/Welcome/i);
-    await expect(page.locator(`text=${testUser.name}`)).toBeVisible();
+    await expect(page.locator('h1')).toContainText(testUser.name);
 
     // 6. Verify cookie exists in browser
     const cookies = await page.context().cookies();
@@ -58,11 +65,11 @@ test.describe('BreatheWise AI Authentication & Dashboard Browser Flows', () => {
     if (await accountTab.isVisible()) {
       await accountTab.click();
     }
-    const signOutBtn = page.locator('button:has-text("Sign Out")').first();
+    const signOutBtn = page.locator('main button:has-text("Sign Out")').first();
     await signOutBtn.click();
 
-    // 8. Verify redirection away from dashboard
-    await page.waitForURL('**/login', { timeout: 10_000 });
+    // 8. Verify redirection away from dashboard to home page
+    await page.waitForURL('http://127.0.0.1:3000/', { timeout: 10_000 });
 
     // 9. Attempt to directly revisit /dashboard without valid session
     await page.goto('/dashboard');
@@ -72,38 +79,76 @@ test.describe('BreatheWise AI Authentication & Dashboard Browser Flows', () => {
     expect(page.url()).toContain('/login');
   });
 
-  test('Flows 11-13: Invalid Credential Feedback and Re-login', async ({ page }) => {
+  test('Flows 11-13: Invalid Credential Feedback and Re-login', async ({ page, request }) => {
+    const loginUser = {
+      name: 'Login Test User',
+      email: `login_test_${Date.now()}_${Math.random().toString(36).substring(7)}@breathewise.test`,
+      password: 'SecurePassword123!',
+    };
+
+    // Pre-register user via API endpoint
+    const regRes = await request.post('/api/auth/register', {
+      headers: {
+        'x-forwarded-for': testIp,
+      },
+      data: {
+        name: loginUser.name,
+        email: loginUser.email,
+        password: loginUser.password,
+      },
+    });
+    expect(regRes.status()).toBe(201);
+
     await page.goto('/login');
 
     // 11. Submit invalid credentials
-    await page.fill('input#email', testUser.email);
-    await page.fill('input#password', 'WrongPassword123!');
-    await page.click('button[type="submit"]');
+    await page.fill('input#login-email', loginUser.email);
+    await page.fill('input#login-password', 'WrongPassword123!');
+    await page.click('form button[type="submit"]');
 
     // 12. Verify accessible error feedback alert
-    const errorAlert = page.locator('[role="alert"]').first();
+    const errorAlert = page.locator('form [role="alert"]').first();
     await expect(errorAlert).toBeVisible({ timeout: 5_000 });
     await expect(errorAlert).toContainText(/Invalid email or password/i);
 
     // 13. Re-login with valid credentials
-    await page.fill('input#password', testUser.password);
-    await page.click('button[type="submit"]');
+    await page.fill('input#login-password', loginUser.password);
+    await page.click('form button[type="submit"]');
     await page.waitForURL('**/dashboard', { timeout: 10_000 });
     await expect(page.locator('h1')).toContainText(/Welcome/i);
   });
 
-  test('Flow 14: Duplicate Registration Conflict Handling', async ({ page }) => {
+  test('Flow 14: Duplicate Registration Conflict Handling', async ({ page, request }) => {
+    const duplicateUser = {
+      name: 'Existing Account User',
+      email: `dup_test_${Date.now()}_${Math.random().toString(36).substring(7)}@breathewise.test`,
+      password: 'SecurePassword123!',
+    };
+
+    // Pre-register user via API endpoint
+    const regRes = await request.post('/api/auth/register', {
+      headers: {
+        'x-forwarded-for': testIp,
+      },
+      data: {
+        name: duplicateUser.name,
+        email: duplicateUser.email,
+        password: duplicateUser.password,
+      },
+    });
+    expect(regRes.status()).toBe(201);
+
     await page.goto('/register');
 
     // Attempt to register with the same email
-    await page.fill('input#name', 'Duplicate Tester');
-    await page.fill('input#email', testUser.email);
-    await page.fill('input#password', 'SomePassword123!');
-    await page.fill('input#confirmPassword', 'SomePassword123!');
-    await page.click('button[type="submit"]');
+    await page.fill('input#register-name', 'Another User');
+    await page.fill('input#register-email', duplicateUser.email);
+    await page.fill('input#register-password', 'SomePassword123!');
+    await page.fill('input#register-confirm-password', 'SomePassword123!');
+    await page.click('form button[type="submit"]');
 
     // Verify 409 Conflict error feedback alert
-    const alert = page.locator('[role="alert"]').first();
+    const alert = page.locator('form [role="alert"]').first();
     await expect(alert).toBeVisible({ timeout: 5_000 });
     await expect(alert).toContainText(/already exists/i);
   });

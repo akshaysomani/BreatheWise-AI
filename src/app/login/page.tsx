@@ -65,9 +65,9 @@ function LoginForm() {
         <div className="w-12 h-12 rounded-xl bg-[#EEF3EA] text-[#397A55] flex items-center justify-center mx-auto mb-2">
           <Lock className="w-6 h-6" aria-hidden="true" />
         </div>
-        <CardTitle className="text-2xl font-extrabold text-[#27352D] font-[var(--font-heading)]">
+        <h1 className="text-2xl font-extrabold text-[#27352D] font-[var(--font-heading)]">
           Welcome Back
-        </CardTitle>
+        </h1>
         <CardDescription className="text-sm text-[#68766C]">
           Sign in to access your family air quality radar and personalized household defense plan.
         </CardDescription>

@@ -65,7 +65,7 @@ describe('M2.1 Security Remediation & Independent Verification Suite', () => {
   // --------------------------------------------------------------------------
   it("2. prevents cross-user access: User B cannot access User A's private household profile", async () => {
     // Setup User A's profile
-    const tokenA = createTestAuthHeader(userA.id, userA.email);
+    const tokenA = await createTestAuthHeader(userA.id);
     const createReqA = new NextRequest('http://localhost:3000/api/household', {
       method: 'POST',
       headers: {
@@ -99,7 +99,7 @@ describe('M2.1 Security Remediation & Independent Verification Suite', () => {
     expect(createResA.status).toBe(201);
 
     // User B requests their own profile; should return 404 (not found) and NEVER User A's profile
-    const tokenB = createTestAuthHeader(userB.id, userB.email);
+    const tokenB = await createTestAuthHeader(userB.id);
     const getReqB = new NextRequest('http://localhost:3000/api/household', {
       headers: { authorization: tokenB },
     });
@@ -114,7 +114,7 @@ describe('M2.1 Security Remediation & Independent Verification Suite', () => {
   // 3. Cross-User Impact Access
   // --------------------------------------------------------------------------
   it("3. isolates personal impact records: User B cannot view User A's impact logs", async () => {
-    const tokenA = createTestAuthHeader(userA.id, userA.email);
+    const tokenA = await createTestAuthHeader(userA.id);
     const createImpactReqA = new NextRequest('http://localhost:3000/api/impact', {
       method: 'POST',
       headers: {
@@ -135,7 +135,7 @@ describe('M2.1 Security Remediation & Independent Verification Suite', () => {
     expect(createResA.status).toBe(201);
 
     // User B fetches their logs
-    const tokenB = createTestAuthHeader(userB.id, userB.email);
+    const tokenB = await createTestAuthHeader(userB.id);
     const getImpactReqB = new NextRequest('http://localhost:3000/api/impact', {
       headers: { authorization: tokenB },
     });
@@ -153,7 +153,7 @@ describe('M2.1 Security Remediation & Independent Verification Suite', () => {
   // 4. Cross-User Routine Access
   // --------------------------------------------------------------------------
   it("4. isolates commute routines: User B cannot access User A's private commute routes", async () => {
-    const tokenA = createTestAuthHeader(userA.id, userA.email);
+    const tokenA = await createTestAuthHeader(userA.id);
     const createRoutineReqA = new NextRequest('http://localhost:3000/api/routines', {
       method: 'POST',
       headers: {
@@ -174,7 +174,7 @@ describe('M2.1 Security Remediation & Independent Verification Suite', () => {
     expect(resA.status).toBe(201);
 
     // User B queries routines
-    const tokenB = createTestAuthHeader(userB.id, userB.email);
+    const tokenB = await createTestAuthHeader(userB.id);
     const getRoutinesReqB = new NextRequest('http://localhost:3000/api/routines', {
       headers: { authorization: tokenB },
     });
@@ -190,7 +190,7 @@ describe('M2.1 Security Remediation & Independent Verification Suite', () => {
   // 5. Cross-User Recommendation Access
   // --------------------------------------------------------------------------
   it("5. protects personalized recommendations: User B cannot read User A's recommendations", async () => {
-    const tokenA = createTestAuthHeader(userA.id, userA.email);
+    const tokenA = await createTestAuthHeader(userA.id);
     const recReqA = new NextRequest('http://localhost:3000/api/recommendations', {
       method: 'POST',
       headers: {
@@ -211,7 +211,7 @@ describe('M2.1 Security Remediation & Independent Verification Suite', () => {
     expect(resA.status).toBe(201);
 
     // User B queries recommendations
-    const tokenB = createTestAuthHeader(userB.id, userB.email);
+    const tokenB = await createTestAuthHeader(userB.id);
     const getRecReqB = new NextRequest('http://localhost:3000/api/recommendations', {
       headers: { authorization: tokenB },
     });

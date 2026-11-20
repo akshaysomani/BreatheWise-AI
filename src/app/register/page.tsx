@@ -85,9 +85,9 @@ export default function RegisterPage() {
             <div className="w-12 h-12 rounded-xl bg-[#EEF3EA] text-[#397A55] flex items-center justify-center mx-auto mb-2">
               <ShieldCheck className="w-6 h-6" aria-hidden="true" />
             </div>
-            <CardTitle className="text-2xl font-extrabold text-[#27352D] font-[var(--font-heading)]">
+            <h1 className="text-2xl font-extrabold text-[#27352D] font-[var(--font-heading)]">
               Create Household Account
-            </CardTitle>
+            </h1>
             <CardDescription className="text-sm text-[#68766C]">
               Join BreatheWise AI to configure your clean air living plan and protect your family from severe urban smog.
             </CardDescription>
