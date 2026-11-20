@@ -28,9 +28,9 @@ import { logger } from '@/lib/logger';
  *    if invalid, sanitizes and returns deterministic guidance.
  */
 
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-const DEFAULT_TIMEOUT_MS = 8000;
-const MAX_OUTPUT_TOKENS = 1500;
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+const DEFAULT_TIMEOUT_MS = 20000;
+const MAX_OUTPUT_TOKENS = 4096;
 
 export async function generateAssistantResponse(
   input: ChatMessageInput,
@@ -74,6 +74,9 @@ export async function generateAssistantResponse(
           temperature: options.temperature ?? 0.2, // Low temperature for deterministic factual accuracy
           maxOutputTokens: options.maxTokens ?? MAX_OUTPUT_TOKENS,
           responseMimeType: 'application/json',
+          thinkingConfig: {
+            thinkingBudget: 0,
+          },
         },
       }),
       signal: controller.signal,
@@ -107,7 +110,7 @@ export async function generateAssistantResponse(
     }
 
     const data = await response.json();
-    const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const candidateText = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') || '';
 
     if (!candidateText || typeof candidateText !== 'string') {
       logger.warn('Gemini returned empty candidate text; using fallback');
@@ -123,8 +126,12 @@ export async function generateAssistantResponse(
     let parsedJson: unknown;
     try {
       parsedJson = JSON.parse(cleanedJsonText);
-    } catch {
-      logger.warn('Failed to parse Gemini JSON output; using fallback');
+    } catch (err: any) {
+      logger.warn('Failed to parse Gemini JSON output; using fallback', {
+        error: String(err),
+        rawSnippet: candidateText.slice(0, 500),
+        cleanedSnippet: cleanedJsonText.slice(0, 500),
+      });
       return deterministicFallbackEngine.generateChatResponse(input.message, payload);
     }
 

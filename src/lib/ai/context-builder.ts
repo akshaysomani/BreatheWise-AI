@@ -278,7 +278,7 @@ export function formatEnvironmentXml(env: EnvironmentalContext): string {
 <observation_time>${env.observationTimeUtc ?? 'NONE'}</observation_time>
 <averaging_notice>${env.averagingNotice}</averaging_notice>
 <pollutants>
-${Object.entries(env.pollutants)
+${Object.entries(env.pollutants || {})
   .map(
     ([code, p]) =>
       `  <pollutant code="${code}" concentration="${p.concentration}" unit="${p.unit}" averaging_period_hours="${p.averagingPeriodHours}" />`
@@ -313,8 +313,8 @@ export function formatUserContextXml(payload: AiContextPayload): string {
   <pediatric_or_maternal>${h.hasInfantOrPediatric}</pediatric_or_maternal>
   <senior_members>${h.hasSeniorMember}</senior_members>
 </household>
-<saved_routines count="${r.savedRoutinesCount}">
-${r.routes
+<saved_routines count="${r?.savedRoutinesCount ?? 0}">
+${(r?.routes || [])
   .map(
     (rt) =>
       `  <route title="${rt.title}" distance_km="${rt.distanceKm}" baseline_mode="${rt.baselineMode}" optimized_mode="${rt.optimizedMode ?? 'NONE'}" />`
