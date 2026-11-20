@@ -172,6 +172,9 @@ async function main() {
         }),
         measurementTimestamp: now,
         isStale: false,
+        provenanceType: 'DEVELOPMENT_SEED',
+        averagingPeriod: '1_HOUR',
+        completenessHours: 1.0,
       },
       {
         latitude: 22.9961,
@@ -198,6 +201,9 @@ async function main() {
         }),
         measurementTimestamp: now,
         isStale: false,
+        provenanceType: 'DEVELOPMENT_SEED',
+        averagingPeriod: '1_HOUR',
+        completenessHours: 1.0,
       },
     ],
   });

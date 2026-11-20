@@ -2,7 +2,14 @@ import prisma from '@/lib/db';
 import { z } from 'zod';
 import { aqiSnapshotSchema } from '@/lib/validations';
 
-export type AqiSnapshotInput = z.infer<typeof aqiSnapshotSchema>;
+export type AqiSnapshotInput = Omit<
+  z.infer<typeof aqiSnapshotSchema>,
+  'provenanceType' | 'averagingPeriod' | 'completenessHours'
+> & {
+  provenanceType?: string;
+  averagingPeriod?: '1_HOUR' | '8_HOUR' | '24_HOUR';
+  completenessHours?: number;
+};
 
 export const airQualityRepository = {
   async saveSnapshot(data: AqiSnapshotInput) {
@@ -28,6 +35,9 @@ export const airQualityRepository = {
         rawBreakdownJson: data.rawBreakdownJson,
         measurementTimestamp: data.measurementTimestamp,
         isStale: data.isStale,
+        provenanceType: data.provenanceType || 'UNKNOWN_PROVENANCE',
+        averagingPeriod: data.averagingPeriod || '1_HOUR',
+        completenessHours: data.completenessHours ?? 1.0,
       },
     });
   },
@@ -53,6 +63,27 @@ export const airQualityRepository = {
     });
   },
 
+  /**
+   * Retrieves rolling 24-hour observation samples for a specific monitoring station
+   * to compute regulatory CPCB 24-hour / 8-hour averages with data completeness checks.
+   */
+  async getRolling24HourHistory(stationId: string, asOfTime = new Date()) {
+    const twentyFourHoursAgo = new Date(asOfTime.getTime() - 24 * 60 * 60 * 1000);
+
+    return prisma.airQualitySnapshot.findMany({
+      where: {
+        stationId,
+        measurementTimestamp: {
+          gte: twentyFourHoursAgo,
+          lte: asOfTime,
+        },
+      },
+      orderBy: {
+        measurementTimestamp: 'asc',
+      },
+    });
+  },
+
   async getRecentHistory(latitude: number, longitude: number, limit = 24) {
     return prisma.airQualitySnapshot.findMany({
       where: {
@@ -63,6 +94,18 @@ export const airQualityRepository = {
         measurementTimestamp: 'desc',
       },
       take: Math.min(limit, 72),
+    });
+  },
+
+  async getSnapshotsByProvenance(provenanceType: string, limit = 50) {
+    return prisma.airQualitySnapshot.findMany({
+      where: {
+        provenanceType,
+      },
+      orderBy: {
+        measurementTimestamp: 'desc',
+      },
+      take: limit,
     });
   },
 };

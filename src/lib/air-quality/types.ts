@@ -1,6 +1,6 @@
 /**
  * BreatheWise AI — Air Quality Intelligence Data Architecture
- * Module M4.1: Canonical Types, Provenance Model & Provider Interfaces
+ * Module M4.1.1: Scientific CPCB Regulatory AQI vs Short-Term Indicator & Provenance
  * 
  * Complies with official Central Pollution Control Board (CPCB) India
  * National Air Quality Index (NAQI) technical standards (2014/2015).
@@ -25,6 +25,13 @@ export type TelemetryProvenanceStatus =
   | 'STALE'     // Observation exceeds freshness threshold (>= 4 hours)
   | 'MOCK'      // Test or fixture measurement (HARD BLOCKED in production)
   | 'NO_DATA';  // No suitable validated observation is available
+
+export type ProvenanceType =
+  | 'VERIFIED_EXTERNAL_OBSERVATION'
+  | 'HISTORICAL_IMPORTED'
+  | 'DEVELOPMENT_SEED'
+  | 'SYNTHETIC_FIXTURE'
+  | 'UNKNOWN_PROVENANCE';
 
 export type CpcbCategory =
   | 'GOOD'                // 0 - 50
@@ -89,6 +96,45 @@ export interface CpcbDataSufficiency {
   details: string;
 }
 
+/**
+ * Official CPCB Indian National AQI (Regulatory 24-Hour Average)
+ * Requires 24-hour averages for PM2.5, PM10, NO2, SO2, NH3, Pb with >=16 hours data completeness,
+ * and 8-hour averages for CO and O3 with >=6 hours data completeness.
+ */
+export interface OfficialCpcbAqiResult {
+  status: 'AVAILABLE' | 'INSUFFICIENT_COMPLETENESS' | 'INSUFFICIENT_POLLUTANTS' | 'UNAVAILABLE';
+  aqi: number | null; // Null if completeness or sufficiency requirements are not satisfied
+  category: CpcbCategory | 'UNAVAILABLE';
+  dominantPollutant: PollutantCode | null;
+  dominantSubIndex: number | null;
+  completenessHours: number; // Maximum sample hours available across monitored criteria pollutants
+  minRequiredHours: number;  // 16.0 hours per CPCB / MoEFCC protocol
+  isRegulatoryCompliant: boolean; // True ONLY if >= 16h completeness AND >= 3 parameters (including PM)
+  averagingPeriod: '24_HOUR';
+  subIndices: Record<PollutantCode, number | null>;
+  healthGuidance: CpcbHealthGuidance;
+  methodology: 'CPCB_NAQI_INDIA_2014';
+  reason: string;
+}
+
+/**
+ * Short-Term Air Quality Indicator (1-Hour Acute Sensor Proxy)
+ * Formulated from instantaneous/hourly sensor observations evaluated against CPCB breakpoints
+ * for immediate exposure mitigation. Explicitly distinguished from 24-hour regulatory AQI.
+ */
+export interface ShortTermAirQualityIndicator {
+  status: 'AVAILABLE' | 'INSUFFICIENT_DATA';
+  indicatorValue: number | null;
+  category: CpcbCategory | 'INSUFFICIENT_DATA';
+  dominantPollutant: PollutantCode | null;
+  dominantSubIndex: number | null;
+  observationPeriod: '1_HOUR';
+  label: 'Short-Term Air Quality Indicator (1-Hour Acute Proxy)';
+  subIndices: Record<PollutantCode, number | null>;
+  healthGuidance: CpcbHealthGuidance;
+  averagingNotice: string;
+}
+
 export interface CpcbAqiResult {
   aqi: number | null; // Overall CPCB AQI (max sub-index) or null if data is insufficient
   category: CpcbCategory | 'INSUFFICIENT_DATA';
@@ -99,6 +145,7 @@ export interface CpcbAqiResult {
   dataSufficiency: CpcbDataSufficiency;
   methodology: 'CPCB_NAQI_INDIA_2014';
   averagingNotice: string;
+  isInstantaneousProxy?: boolean;
 }
 
 export interface TelemetryTimestamps {
@@ -112,9 +159,12 @@ export interface TelemetryTimestamps {
 
 export interface CanonicalAirQualityRecord {
   status: TelemetryProvenanceStatus;
+  provenanceType: ProvenanceType;
   station: MonitoringStation;
   measurements: Record<PollutantCode, CanonicalPollutantMeasurement | null>;
-  cpcbAqi: CpcbAqiResult;
+  officialCpcbAqi: OfficialCpcbAqiResult;
+  shortTermIndicator: ShortTermAirQualityIndicator;
+  cpcbAqi: CpcbAqiResult; // Backwards-compatible alias
   timestamps: TelemetryTimestamps;
   freshness: {
     state: FreshnessState;

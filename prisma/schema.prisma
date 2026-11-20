@@ -142,8 +142,15 @@ model AirQualitySnapshot {
   fetchedAt            DateTime @default(now())
   isStale              Boolean  @default(false)
 
+  // M4.1.1: Data Provenance & Averaging Period Integrity
+  provenanceType       String   @default("UNKNOWN_PROVENANCE") // "VERIFIED_EXTERNAL_OBSERVATION" | "HISTORICAL_IMPORTED" | "DEVELOPMENT_SEED" | "SYNTHETIC_FIXTURE" | "UNKNOWN_PROVENANCE"
+  averagingPeriod      String   @default("1_HOUR") // "1_HOUR" | "8_HOUR" | "24_HOUR"
+  completenessHours    Float    @default(1.0) // Number of hourly samples aggregated in this snapshot
+
   @@index([latitude, longitude])
   @@index([fetchedAt])
+  @@index([stationId, measurementTimestamp])
+  @@index([provenanceType])
 }
 
 // ----------------------------------------------------

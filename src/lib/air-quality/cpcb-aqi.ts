@@ -11,8 +11,13 @@
  * 3. Concentration unit handling: CO in mg/m³, all other 7 in µg/m³.
  * 4. CPCB Data Sufficiency Rule: At least 3 parameters must be monitored, of which
  *    at least one MUST be PM2.5 or PM10. If not satisfied, overall AQI is null.
- * 5. Overall AQI = max(subIndices of monitored pollutants).
- * 6. Official CPCB 6-category classification & health statements.
+ * 5. Averaging Period & Data Completeness Separation:
+ *    - Official CPCB AQI: 24-hour rolling averages (minimum 16 hours data completeness for
+ *      particulates, NO2, SO2, NH3, Pb; 8-hour rolling average with minimum 6 hours for CO and O3).
+ *    - Short-Term Air Quality Indicator: 1-hour acute sensor observations evaluated against
+ *      CPCB breakpoints as an instantaneous real-time proxy for immediate exposure mitigation.
+ * 6. Overall AQI = max(subIndices of monitored pollutants).
+ * 7. Official CPCB 6-category classification & health statements.
  */
 
 import {
@@ -23,6 +28,8 @@ import {
   CpcbAqiResult,
   CanonicalPollutantMeasurement,
   AveragingPeriod,
+  OfficialCpcbAqiResult,
+  ShortTermAirQualityIndicator,
 } from './types';
 
 export interface CpcbBreakpoint {
@@ -135,7 +142,7 @@ export const CPCB_NAAQS_LIMITS: Record<PollutantCode, { limit: number; unit: str
 /**
  * Official CPCB NAQI Health Guidance and Statements
  */
-export const CPCB_HEALTH_STATEMENTS: Record<CpcbCategory | 'INSUFFICIENT_DATA', CpcbHealthGuidance> = {
+export const CPCB_HEALTH_STATEMENTS: Record<CpcbCategory | 'INSUFFICIENT_DATA' | 'UNAVAILABLE', CpcbHealthGuidance> = {
   GOOD: {
     shortStatement: 'Minimal health impact',
     description: 'Air quality is considered satisfactory, and air pollution poses little or no risk.',
@@ -198,6 +205,15 @@ export const CPCB_HEALTH_STATEMENTS: Record<CpcbCategory | 'INSUFFICIENT_DATA', 
     generalPublicAdvice: 'Refer to individual pollutant concentrations below rather than a composite index.',
     sensitiveGroupsAdvice: 'Check individual PM2.5 readings if available before outdoor exposure.',
     indoorGuidance: 'Maintain standard air quality hygiene based on seasonal smog expectations.',
+  },
+  UNAVAILABLE: {
+    shortStatement: 'Official 24-hour CPCB regulatory average unavailable',
+    description: 'Official CPCB regulatory AQI mandates a rolling 24-hour average with at least 16 hours data completeness per MoEFCC protocol.',
+    colorHex: '#68766C',
+    colorClass: 'text-[#48534C] bg-[#F0F2EF] border-[#68766C]/30',
+    generalPublicAdvice: 'Refer to the short-term 1-hour acute indicator for immediate exposure guidance.',
+    sensitiveGroupsAdvice: 'Consult real-time PM2.5 measurements to inform immediate outdoor decisions.',
+    indoorGuidance: 'Maintain continuous filtration based on real-time atmospheric readings.',
   },
 };
 
@@ -289,7 +305,6 @@ export function calculateCpcbSubIndex(
   for (let i = 0; i < breakpoints.length; i++) {
     const bp = breakpoints[i];
     // Check if within current bracket
-    // For the first bracket, bpl is 0
     if (cp <= bp.bph) {
       // Linear interpolation:
       // Ip = [ (I_high - I_low) / (BPH - BPL) ] * (Cp - BPL) + I_low
@@ -377,16 +392,27 @@ export interface RawPollutantInput {
   rawParameterName?: string;
 }
 
+export interface HourlySampleInput {
+  pollutant: PollutantCode;
+  value: number;
+  unit: string;
+  measurementTimestamp: Date | string;
+}
+
 /**
- * Master CPCB Indian National AQI Calculator
- * Accepts raw pollutant inputs, normalizes units, calculates individual sub-indices,
- * verifies the CPCB data sufficiency rule, and determines dominant pollutant and overall AQI.
+ * Calculates Official CPCB National Air Quality Index (Regulatory 24-Hour Average)
+ * 
+ * Strict Scientific Rules per CPCB / MoEFCC 2014-2015 Protocol:
+ * 1. Requires 24-hour rolling averages for PM2.5, PM10, NO2, SO2, NH3, Pb with >= 16 hours data completeness.
+ * 2. Requires 8-hour rolling averages for CO and O3 with >= 6 hours data completeness.
+ * 3. At least 3 pollutants with sufficient completeness must be present, including PM2.5 or PM10.
+ * 4. If completeness is < 16 hours, official AQI is explicitly UNAVAILABLE (null).
  */
-export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
-  measurements: Record<PollutantCode, CanonicalPollutantMeasurement | null>;
-  aqiResult: CpcbAqiResult;
-} {
-  const measurements: Record<PollutantCode, CanonicalPollutantMeasurement | null> = {
+export function calculateOfficialCpcbAqi(
+  hourlySamples: HourlySampleInput[],
+  asOfTime = new Date()
+): OfficialCpcbAqiResult {
+  const emptySubIndices: Record<PollutantCode, number | null> = {
     'PM2.5': null,
     'PM10': null,
     'NO2': null,
@@ -397,6 +423,140 @@ export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
     'Pb': null,
   };
 
+  const asOfMs = asOfTime.getTime();
+  const window24hMs = 24 * 60 * 60 * 1000;
+  const window8hMs = 8 * 60 * 60 * 1000;
+
+  // Group samples by pollutant and hourly bins
+  const samplesByPollutant: Record<PollutantCode, Map<number, number>> = {
+    'PM2.5': new Map(),
+    'PM10': new Map(),
+    'NO2': new Map(),
+    'SO2': new Map(),
+    'CO': new Map(),
+    'O3': new Map(),
+    'NH3': new Map(),
+    'Pb': new Map(),
+  };
+
+  const unitsByPollutant: Partial<Record<PollutantCode, string>> = {};
+
+  for (const s of hourlySamples) {
+    if (s.value === null || s.value === undefined || isNaN(s.value) || s.value < 0) continue;
+    const tMs = new Date(s.measurementTimestamp).getTime();
+    if (tMs > asOfMs) continue; // Ignore future measurements
+
+    // Hour bucket key (floor to hour)
+    const hourKey = Math.floor(tMs / (60 * 60 * 1000));
+    const is8HourPollutant = s.pollutant === 'CO' || s.pollutant === 'O3';
+    const cutoff = is8HourPollutant ? asOfMs - window8hMs : asOfMs - window24hMs;
+
+    if (tMs >= cutoff) {
+      samplesByPollutant[s.pollutant].set(hourKey, s.value);
+      unitsByPollutant[s.pollutant] = s.unit;
+    }
+  }
+
+  // Calculate 24-hr / 8-hr arithmetic means for pollutants meeting completeness
+  const validPollutants: PollutantCode[] = [];
+  const subIndices = { ...emptySubIndices };
+  let maxCompletenessHours = 0;
+
+  for (const code of Object.keys(samplesByPollutant) as PollutantCode[]) {
+    const hourSamples = samplesByPollutant[code];
+    const sampleCount = hourSamples.size;
+    if (sampleCount > maxCompletenessHours) {
+      maxCompletenessHours = sampleCount;
+    }
+
+    const is8Hour = code === 'CO' || code === 'O3';
+    const minHours = is8Hour ? 6 : 16; // 75% completeness requirement
+
+    if (sampleCount >= minHours) {
+      let sum = 0;
+      for (const val of hourSamples.values()) {
+        sum += val;
+      }
+      const mean = sum / sampleCount;
+      const unit = unitsByPollutant[code] || (code === 'CO' ? 'mg/m³' : 'µg/m³');
+
+      const { normalizedValue } = normalizeConcentration(code, mean, unit);
+      const { subIndex } = calculateCpcbSubIndex(code, normalizedValue);
+
+      if (subIndex !== null) {
+        subIndices[code] = subIndex;
+        validPollutants.push(code);
+      }
+    }
+  }
+
+  // Check CPCB data sufficiency rule (>= 3 parameters including PM2.5 or PM10)
+  const sufficiency = checkCpcbDataSufficiency(validPollutants);
+
+  if (!sufficiency.isSufficient) {
+    const reason = maxCompletenessHours < 16
+      ? `Insufficient continuous monitoring completeness (${maxCompletenessHours}/24 hours). Official CPCB regulatory AQI mandates at least 16 hours of continuous data completeness per MoEFCC protocol.`
+      : `Insufficient parameters with 24-hour completeness (${validPollutants.length} valid). CPCB requires at least 3 parameters with mandatory PM2.5 or PM10.`;
+
+    return {
+      status: maxCompletenessHours < 16 ? 'INSUFFICIENT_COMPLETENESS' : 'INSUFFICIENT_POLLUTANTS',
+      aqi: null,
+      category: 'UNAVAILABLE',
+      dominantPollutant: null,
+      dominantSubIndex: null,
+      completenessHours: maxCompletenessHours,
+      minRequiredHours: 16,
+      isRegulatoryCompliant: false,
+      averagingPeriod: '24_HOUR',
+      subIndices,
+      healthGuidance: CPCB_HEALTH_STATEMENTS.UNAVAILABLE,
+      methodology: 'CPCB_NAQI_INDIA_2014',
+      reason,
+    };
+  }
+
+  // Determine dominant pollutant and overall AQI
+  const priorityOrder: PollutantCode[] = ['PM2.5', 'PM10', 'NO2', 'O3', 'SO2', 'CO', 'NH3', 'Pb'];
+  let maxSubIndex = -1;
+  let dominant: PollutantCode | null = null;
+
+  for (const p of priorityOrder) {
+    const s = subIndices[p];
+    if (s !== null && s > maxSubIndex) {
+      maxSubIndex = s;
+      dominant = p;
+    }
+  }
+
+  const overallAqi = maxSubIndex >= 0 ? maxSubIndex : null;
+  const category = overallAqi !== null ? getCpcbCategory(overallAqi) : 'UNAVAILABLE';
+  const healthGuidance = overallAqi !== null ? CPCB_HEALTH_STATEMENTS[category] : CPCB_HEALTH_STATEMENTS.UNAVAILABLE;
+
+  return {
+    status: 'AVAILABLE',
+    aqi: overallAqi,
+    category,
+    dominantPollutant: dominant,
+    dominantSubIndex: maxSubIndex >= 0 ? maxSubIndex : null,
+    completenessHours: maxCompletenessHours,
+    minRequiredHours: 16,
+    isRegulatoryCompliant: true,
+    averagingPeriod: '24_HOUR',
+    subIndices,
+    healthGuidance,
+    methodology: 'CPCB_NAQI_INDIA_2014',
+    reason: 'Satisfies official CPCB 24-hour regulatory data completeness and parameter sufficiency standards.',
+  };
+}
+
+/**
+ * Calculates Short-Term Air Quality Indicator (1-Hour Acute Sensor Proxy)
+ * Formulated from instantaneous/hourly sensor readings evaluated against CPCB breakpoints
+ * strictly for immediate exposure advisory.
+ */
+export function calculateShortTermIndicator(
+  inputs: RawPollutantInput[]
+): ShortTermAirQualityIndicator {
   const subIndices: Record<PollutantCode, number | null> = {
     'PM2.5': null,
     'PM10': null,
@@ -415,33 +575,8 @@ export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
       continue;
     }
 
-    const { normalizedValue, normalizedUnit } = normalizeConcentration(
-      input.pollutant,
-      input.value,
-      input.unit
-    );
-
-    const { subIndex, category } = calculateCpcbSubIndex(input.pollutant, normalizedValue);
-
-    const naaqs = CPCB_NAAQS_LIMITS[input.pollutant];
-    const isExceededNAAQS = naaqs ? normalizedValue > naaqs.limit : false;
-
-    const is1Hour = (input.averagingPeriod || '24_HOUR') === '1_HOUR';
-    measurements[input.pollutant] = {
-      pollutant: input.pollutant,
-      value: input.value,
-      originalUnit: input.unit,
-      normalizedUnit,
-      normalizedValue,
-      averagingPeriod: input.averagingPeriod || '24_HOUR',
-      isInstantaneousProxy: is1Hour,
-      subIndex,
-      cpcbCategory: category,
-      observationTimestampUtc: input.measurementTimestampUtc || new Date().toISOString(),
-      ingestionTimestampUtc: new Date().toISOString(),
-      isExceededNAAQS,
-      rawParameterName: input.rawParameterName,
-    };
+    const { normalizedValue } = normalizeConcentration(input.pollutant, input.value, input.unit);
+    const { subIndex } = calculateCpcbSubIndex(input.pollutant, normalizedValue);
 
     if (subIndex !== null) {
       subIndices[input.pollutant] = subIndex;
@@ -450,30 +585,24 @@ export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
   }
 
   const sufficiency = checkCpcbDataSufficiency(validPollutants);
-
   const averagingNotice =
-    'Acute 1-hour sensor concentrations are evaluated against 24-hour/8-hour CPCB NAQI breakpoints as an instantaneous real-time proxy. Regulatory 24-hour CPCB AQI requires minimum 16 hours of continuous data completeness per MoEFCC protocol.';
+    'Short-Term Air Quality Indicator (1-Hour Acute Proxy): Acute 1-hour sensor concentrations evaluated against CPCB breakpoints for immediate exposure mitigation. Does not represent certified 24-hour CPCB regulatory compliance.';
 
   if (!sufficiency.isSufficient) {
-    // Insufficient data per CPCB: overall AQI cannot be formulated
     return {
-      measurements,
-      aqiResult: {
-        aqi: null,
-        category: 'INSUFFICIENT_DATA',
-        dominantPollutant: null,
-        dominantSubIndex: null,
-        healthGuidance: CPCB_HEALTH_STATEMENTS.INSUFFICIENT_DATA,
-        subIndices,
-        dataSufficiency: sufficiency,
-        methodology: 'CPCB_NAQI_INDIA_2014',
-        averagingNotice,
-      },
+      status: 'INSUFFICIENT_DATA',
+      indicatorValue: null,
+      category: 'INSUFFICIENT_DATA',
+      dominantPollutant: null,
+      dominantSubIndex: null,
+      observationPeriod: '1_HOUR',
+      label: 'Short-Term Air Quality Indicator (1-Hour Acute Proxy)',
+      subIndices,
+      healthGuidance: CPCB_HEALTH_STATEMENTS.INSUFFICIENT_DATA,
+      averagingNotice,
     };
   }
 
-  // Find dominant pollutant (maximum subIndex)
-  // Tie-breaker priority: PM2.5 > PM10 > NO2 > O3 > others
   const priorityOrder: PollutantCode[] = ['PM2.5', 'PM10', 'NO2', 'O3', 'SO2', 'CO', 'NH3', 'Pb'];
   let maxSubIndex = -1;
   let dominant: PollutantCode | null = null;
@@ -486,22 +615,120 @@ export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
     }
   }
 
-  const overallAqi = maxSubIndex >= 0 ? maxSubIndex : null;
-  const category = overallAqi !== null ? getCpcbCategory(overallAqi) : 'INSUFFICIENT_DATA';
+  const overallIndicator = maxSubIndex >= 0 ? maxSubIndex : null;
+  const category = overallIndicator !== null ? getCpcbCategory(overallIndicator) : 'INSUFFICIENT_DATA';
   const healthGuidance = CPCB_HEALTH_STATEMENTS[category];
 
   return {
+    status: 'AVAILABLE',
+    indicatorValue: overallIndicator,
+    category,
+    dominantPollutant: dominant,
+    dominantSubIndex: maxSubIndex >= 0 ? maxSubIndex : null,
+    observationPeriod: '1_HOUR',
+    label: 'Short-Term Air Quality Indicator (1-Hour Acute Proxy)',
+    subIndices,
+    healthGuidance,
+    averagingNotice,
+  };
+}
+
+/**
+ * Master CPCB Indian National AQI Calculator (Backwards Compatible)
+ * Produces canonical measurements, official CPCB result, and short-term indicator.
+ */
+export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
+  measurements: Record<PollutantCode, CanonicalPollutantMeasurement | null>;
+  aqiResult: CpcbAqiResult;
+  officialCpcbAqi: OfficialCpcbAqiResult;
+  shortTermIndicator: ShortTermAirQualityIndicator;
+} {
+  const measurements: Record<PollutantCode, CanonicalPollutantMeasurement | null> = {
+    'PM2.5': null,
+    'PM10': null,
+    'NO2': null,
+    'SO2': null,
+    'CO': null,
+    'O3': null,
+    'NH3': null,
+    'Pb': null,
+  };
+
+  for (const input of inputs) {
+    if (input.value === null || input.value === undefined || isNaN(input.value) || input.value < 0) {
+      continue;
+    }
+
+    const { normalizedValue, normalizedUnit } = normalizeConcentration(
+      input.pollutant,
+      input.value,
+      input.unit
+    );
+
+    const { subIndex, category } = calculateCpcbSubIndex(input.pollutant, normalizedValue);
+    const naaqs = CPCB_NAAQS_LIMITS[input.pollutant];
+    const isExceededNAAQS = naaqs ? normalizedValue > naaqs.limit : false;
+    const is1Hour = (input.averagingPeriod || '1_HOUR') === '1_HOUR';
+
+    measurements[input.pollutant] = {
+      pollutant: input.pollutant,
+      value: input.value,
+      originalUnit: input.unit,
+      normalizedUnit,
+      normalizedValue,
+      averagingPeriod: input.averagingPeriod || '1_HOUR',
+      isInstantaneousProxy: is1Hour,
+      subIndex,
+      cpcbCategory: category,
+      observationTimestampUtc: input.measurementTimestampUtc || new Date().toISOString(),
+      ingestionTimestampUtc: new Date().toISOString(),
+      isExceededNAAQS,
+      rawParameterName: input.rawParameterName,
+    };
+  }
+
+  // Calculate Short-Term Indicator (from real-time sensor observations)
+  const shortTermIndicator = calculateShortTermIndicator(inputs);
+
+  // Single-snapshot inputs have completeness = 1 hour, so official CPCB AQI is insufficient
+  const officialCpcbAqi: OfficialCpcbAqiResult = {
+    status: 'INSUFFICIENT_COMPLETENESS',
+    aqi: null,
+    category: 'UNAVAILABLE',
+    dominantPollutant: null,
+    dominantSubIndex: null,
+    completenessHours: 1.0,
+    minRequiredHours: 16.0,
+    isRegulatoryCompliant: false,
+    averagingPeriod: '24_HOUR',
+    subIndices: shortTermIndicator.subIndices,
+    healthGuidance: CPCB_HEALTH_STATEMENTS.UNAVAILABLE,
+    methodology: 'CPCB_NAQI_INDIA_2014',
+    reason: 'Single hourly sensor observation does not meet the minimum 16-hour continuous data completeness required for official CPCB 24-hour regulatory AQI.',
+  };
+
+  // Construct backward-compatible aqiResult
+  const aqiResult: CpcbAqiResult = {
+    aqi: shortTermIndicator.indicatorValue,
+    category: shortTermIndicator.category,
+    dominantPollutant: shortTermIndicator.dominantPollutant,
+    dominantSubIndex: shortTermIndicator.dominantSubIndex,
+    healthGuidance: shortTermIndicator.healthGuidance,
+    subIndices: shortTermIndicator.subIndices,
+    dataSufficiency: checkCpcbDataSufficiency(
+      (Object.keys(shortTermIndicator.subIndices) as PollutantCode[]).filter(
+        (p) => shortTermIndicator.subIndices[p] !== null
+      )
+    ),
+    methodology: 'CPCB_NAQI_INDIA_2014',
+    averagingNotice: shortTermIndicator.averagingNotice,
+    isInstantaneousProxy: true,
+  };
+
+  return {
     measurements,
-    aqiResult: {
-      aqi: overallAqi,
-      category,
-      dominantPollutant: dominant,
-      dominantSubIndex: maxSubIndex >= 0 ? maxSubIndex : null,
-      healthGuidance,
-      subIndices,
-      dataSufficiency: sufficiency,
-      methodology: 'CPCB_NAQI_INDIA_2014',
-      averagingNotice,
-    },
+    aqiResult,
+    officialCpcbAqi,
+    shortTermIndicator,
   };
 }

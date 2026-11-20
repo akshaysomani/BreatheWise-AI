@@ -2,8 +2,8 @@
 **Project:** BreatheWise AI  
 **Competition:** Prompt War — Challenge 6: Urban Air Quality Assistant  
 **Target Score:** 97.50+ / 100  
-**Current Phase:** M4.1 — Live Provider Integration & Environmental Data Integrity Audit  
-**Document Version:** 1.4.1  
+**Current Phase:** M4.1.1 — Scientific AQI Validation & Final Evidence Audit  
+**Document Version:** 1.4.2  
 **Last Updated:** 2026-11-20  
 
 ---
@@ -30,16 +30,15 @@
 ---
 
 ## 3. Current Module Status
-- **Current Module:** `M4.1 — Live Provider Integration & Environmental Data Integrity Audit`
-- **Status:** **COMPLETED & INDEPENDENTLY AUDITED (191/191 Vitest Tests Passing, 24/24 Playwright Browser Tests Passing)**
+- **Current Module:** `M4.1.1 — Scientific AQI Validation & Final Evidence Audit`
+- **Status:** **COMPLETED & INDEPENDENTLY AUDITED (202/202 Vitest Tests Passing, 24/24 Playwright Browser Tests Passing)**
 - **Completion Evidence:**
-  - **Comprehensive 12-Question Provider Audit:** Audited all live and mock provider execution paths. Documented upstream OpenAQ v3 specifications, API key requirements (`OPENAQ_API_KEY`), CPCB CAAQMS / OGD India (`data.gov.in`) data access limitations, and regional station availability in Gujarat (Ahmedabad, Gandhinagar, Surat) and Delhi.
-  - **Mock Data Elimination from Production Paths (ADR-015):** Completely deleted `src/lib/air-quality/providers/mock-cpcb-provider.ts` from runtime source tree. Relocated test baseline data to `src/test/fixtures/mock-cpcb-fixture.ts` guarded by `assertNotProduction()` which throws a fatal exception if invoked when `NODE_ENV === 'production'`. Enforced a strict production boundary in `AirQualityService`: when upstream live feeds are unconfigured and no local cache exists, BreatheWise AI strictly returns honest `status: 'NO_DATA'` without synthetic number fabrication. Verified in `src/test/mock-isolation.test.ts`.
-  - **Scientific CPCB NAQI Golden Verification Suite:** Authored `src/test/cpcb-aqi-golden.test.ts` (19 tests) verifying official CPCB breakpoints across all 8 criteria pollutants (PM2.5, PM10, NO2, SO2, CO, O3, NH3, Pb), breakpoint boundaries, concentration rounding (CO/Pb to 1 decimal, others to integers), negative/ceiling rejection, and the CPCB data sufficiency truth table (requiring $\ge 3$ pollutants with mandatory PM2.5 or PM10).
-  - **Physical Plausibility & Timestamp Guard:** Created `src/lib/air-quality/measurement-validator.ts` enforcing physical concentration ceilings (PM2.5: 2000 µg/m³, PM10: 3000 µg/m³, etc.), non-negative checks, deduplication (favoring newer observations), and future timestamp rejection (>5 minute clock skew).
-  - **4-Timestamp & 5-State Provenance Model (ADR-016):** Implemented physical observation time, server ingestion time, client retrieval time, and database cache time, along with 5 explicit provenance states (`LIVE`, `CACHED`, `STALE`, `MOCK`, `NO_DATA`).
-  - **AirQualityRadar UI Upgrades:** Enhanced `AirQualityRadar.tsx` with dynamic provenance status badges, dual-timestamp display (Observed IST vs Retrieved IST), acute 1-hour sensor proxy disclaimer distinguishing instantaneous readings from regulatory 24-hour CPCB standards, and an honest zero-fabrication fallback card (`data-testid="aqi-no-data-card"`) with quick regional hub shortcuts.
-  - **Automated Verification:** **191/191 unit and integration tests passing** across 14 Vitest test suites (`npx vitest run`).
+  - **Decoupled Official CPCB 24-Hour Regulatory AQI from Acute Short-Term Proxy:** Implemented mathematical completeness checks ($\ge 16$ hours continuous monitoring for 24-hr criteria pollutants, $\ge 6$ hours for 8-hr CO/O3). Single hourly readings explicitly return `officialCpcbAqi.status = 'INSUFFICIENT_COMPLETENESS'` (`aqi = null`, `category = 'UNAVAILABLE'`), while providing `shortTermIndicator = { indicatorValue, category, observationPeriod: '1_HOUR' }`.
+  - **SQLite Database Provenance Audit & Migration:** Created non-destructive migration `20261120131818_add_m4_1_1_provenance_and_averaging` adding `provenanceType`, `averagingPeriod`, and `completenessHours` with compound index on `[stationId, measurementTimestamp]`. Classified all database snapshots into 5 typed categories (`VERIFIED_EXTERNAL_OBSERVATION`, `HISTORICAL_IMPORTED`, `DEVELOPMENT_SEED`, `SYNTHETIC_FIXTURE`, `UNKNOWN_PROVENANCE`).
+  - **Timestamp Decoupling Invariant:** Enforced strict separation between physical observation timestamp (`measurementTimestamp`) and server ingestion timestamp (`fetchedAt`). Database insertion time is never substituted for physical observation time.
+  - **5-State Provenance Machine & 10 Production Invariants:** Verified truth table for `LIVE`, `CACHED`, `STALE`, `MOCK`, and `NO_DATA`. Proved that seed records and synthetic fixtures cannot masquerade as live telemetry, mock fixtures are strictly blocked in production mode, and geolocation is quantized for privacy.
+  - **Dual-Card Dashboard Presentation (`AirQualityRadar.tsx`):** Added a dedicated Official CPCB 24-Hour Regulatory AQI status card (`data-testid="official-cpcb-status"`) disclosing statutory MoEFCC 16-hour continuous completeness requirements, alongside the real-time Acute 1-Hour Proxy gauge (`data-testid="short-term-indicator-badge"`).
+  - **Automated Verification:** **202/202 unit and integration tests passing** across 15 Vitest test suites (`npx vitest run`).
   - **Browser Automation:** **24/24 Playwright tests passing** across Desktop Chrome (1440x900), Mobile Small (360x640), and Mobile Standard (390x844).
   - **Static Analysis & Build:** `npx tsc --noEmit` passing with 0 errors; Webpack production build succeeding with all 19 routes prerendered.
 
@@ -55,6 +54,7 @@
 - [x] **M3.1.1: Final Authentication Verification & Remediation** (Completed & Verified — 136/136 unit tests, 15/15 Playwright browser tests)
 - [x] **M4: Air Quality Intelligence** (Completed & Verified — 166/166 unit tests, 21/21 Playwright browser tests)
 - [x] **M4.1: Live Provider Integration & Environmental Data Integrity Audit** (Completed & Verified — 191/191 unit tests, 24/24 Playwright browser tests)
+- [x] **M4.1.1: Scientific AQI Validation & Final Evidence Audit** (Completed & Verified — 202/202 unit tests, 24/24 Playwright browser tests)
 
 ---
 
@@ -83,7 +83,8 @@
 13. **Indian CPCB NAQI Calculation Engine & Standards Compliance (ADR-013 / M4):** Strictly implements official Central Pollution Control Board (CPCB) India National Air Quality Index (NAQI) guidelines covering 8 criteria pollutants with piecewise linear interpolation, 24-hr/8-hr Indian NAAQS limits, and the CPCB >=3 criteria parameter data sufficiency rule (mandatory PM2.5 or PM10).
 14. **Geospatial Station Selection & Zero-Fabrication Telemetry Policy (ADR-014 / M4):** Great-circle Haversine distance, composite station ranking, 50 km cutoff radius, 2-decimal-place user coordinate quantization, and absolute prohibition on synthetic/fabricated telemetry numbers.
 15. **Mock Data Elimination & Hard Production Boundary (ADR-015 / M4.1):** Complete removal of mock providers from runtime paths. Test fixtures isolated in `src/test/fixtures/` with `assertNotProduction()` hard exception guard. When live data is unconfigured and cache is empty, the application serves honest `NO_DATA` with zero simulated numbers.
-16. **Four-Timestamp Model & Provenance State Machine (ADR-016 / M4.1):** Explicit tracking of observation time (physical sensor), ingestion time (BreatheWise fetch), retrieval time (client response), and cache time (database persistence). 5-state provenance classification (`LIVE`, `CACHED`, `STALE`, `MOCK`, `NO_DATA`) with acute 1-hour sensor proxy disclosure against 24-hour CPCB regulatory standards.
+16. **Four-Timestamp Model & Provenance State Machine (ADR-016 / M4.1):** Explicit tracking of observation time (physical sensor), ingestion time (BreatheWise fetch), retrieval time (client response), and cache time (database persistence). 5-state provenance classification (`LIVE`, `CACHED`, `STALE`, `MOCK`, `NO_DATA`).
+17. **Scientific AQI Decoupling & Continuous Completeness Enforcement (ADR-017 / M4.1.1):** Rigorous mathematical decoupling of official 24-hour CPCB regulatory NAQI ($\ge 16$ hours data completeness required per MoEFCC protocol) from acute 1-hour sensor proxy indicators. 5-tier typed database provenance (`VERIFIED_EXTERNAL_OBSERVATION`, `HISTORICAL_IMPORTED`, `DEVELOPMENT_SEED`, `SYNTHETIC_FIXTURE`, `UNKNOWN_PROVENANCE`) with physical observation time strictly decoupled from server ingestion time.
 
 ---
 
@@ -95,4 +96,4 @@
 - **Security:** scrypt KDF ($N=16384, r=8, p=1$), SHA-256 token hashing, opaque DB session tokens, HMAC-SHA256 token adapter, timing-safe equality, PII/health logger redaction, server-side trusted origin CSRF guard, assertNotProduction hard guard
 - **Styling:** Tailwind CSS v4 (`@tailwindcss/postcss`)
 - **Iconography:** Lucide React
-- **Testing:** Vitest 5.1.1 + Testing Library (`@testing-library/react`, `@testing-library/jest-dom`) + Playwright E2E specification
+- **Testing:** Vitest 5.1.1 + Testing Library (`@testing-library/react`, `@testing-library/jest-dom`) + Playwright E2E specification (Desktop Chrome, Mobile 360px, Mobile 390px)

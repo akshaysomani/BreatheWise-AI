@@ -12,7 +12,12 @@
 import { airQualityRepository, AqiSnapshotInput } from '@/repositories/air-quality.repository';
 import {
   calculateCpcbAqi,
+  calculateOfficialCpcbAqi,
+  calculateShortTermIndicator,
+  calculateCpcbSubIndex,
+  CPCB_HEALTH_STATEMENTS,
   RawPollutantInput,
+  HourlySampleInput,
 } from '@/lib/air-quality/cpcb-aqi';
 import { selectBestStation, MAX_REPRESENTATIVE_DISTANCE_KM } from '@/lib/air-quality/station-selector';
 import { openaqProvider } from '@/lib/air-quality/providers/openaq-provider';
@@ -27,6 +32,10 @@ import {
   MonitoringStation,
   FreshnessState,
   TelemetryProvenanceStatus,
+  ProvenanceType,
+  OfficialCpcbAqiResult,
+  ShortTermAirQualityIndicator,
+  CpcbCategory,
 } from '@/lib/air-quality/types';
 
 export interface AirQualityQueryOptions {
@@ -57,15 +66,29 @@ export const airQualityService = {
       const cached = await airQualityRepository.getLatestByLocation(latitude, longitude, 60);
 
       if (cached) {
-        const freshness = evaluateFreshness(cached.measurementTimestamp);
-        const provenanceStatus: TelemetryProvenanceStatus = freshness.isStale ? 'STALE' : 'CACHED';
+        const isFixture = cached.provenanceType === 'SYNTHETIC_FIXTURE' || cached.sourceProvider === 'MOCK_FIXTURE';
+        if (isFixture && isProduction) {
+          // Hard boundary: In production, synthetic fixture records from cache are never served
+        } else {
+          const freshness = evaluateFreshness(cached.measurementTimestamp);
+          const provenanceStatus: TelemetryProvenanceStatus = isFixture
+            ? 'MOCK'
+            : freshness.isStale
+            ? 'STALE'
+            : 'CACHED';
 
-        const record = this.reconstructRecordFromSnapshot(cached, freshness, provenanceStatus);
-        return {
-          status: 'SUCCESS',
-          provenanceStatus,
-          data: record,
-        };
+          const record = this.reconstructRecordFromSnapshot(
+            cached,
+            freshness,
+            provenanceStatus,
+            isFixture ? 'SYNTHETIC_FIXTURE' : ((cached.provenanceType as ProvenanceType) || 'UNKNOWN_PROVENANCE')
+          );
+          return {
+            status: 'SUCCESS',
+            provenanceStatus,
+            data: record,
+          };
+        }
       }
 
       // 2. Query upstream live provider: OpenAQ v3
@@ -88,13 +111,24 @@ export const airQualityService = {
         // If an older database cache exists (up to 24h), serve it as STALE rather than failing
         const olderCached = await airQualityRepository.getLatestByLocation(latitude, longitude, 1440);
         if (olderCached) {
-          const staleFreshness = evaluateFreshness(olderCached.measurementTimestamp);
-          return {
-            status: 'SUCCESS',
-            provenanceStatus: 'STALE',
-            data: this.reconstructRecordFromSnapshot(olderCached, staleFreshness, 'STALE'),
-            notice: 'Live sensor telemetry is temporarily unavailable. Serving verified historical baseline from cache.',
-          };
+          const isFixture = olderCached.provenanceType === 'SYNTHETIC_FIXTURE' || olderCached.sourceProvider === 'MOCK_FIXTURE';
+          if (isFixture && isProduction) {
+            // Hard boundary: skip synthetic fixtures in production
+          } else {
+            const staleFreshness = evaluateFreshness(olderCached.measurementTimestamp);
+            const fallbackStatus: TelemetryProvenanceStatus = isFixture ? 'MOCK' : 'STALE';
+            return {
+              status: 'SUCCESS',
+              provenanceStatus: fallbackStatus,
+              data: this.reconstructRecordFromSnapshot(
+                olderCached,
+                staleFreshness,
+                fallbackStatus,
+                isFixture ? 'SYNTHETIC_FIXTURE' : ((olderCached.provenanceType as ProvenanceType) || 'HISTORICAL_IMPORTED')
+              ),
+              notice: 'Live sensor telemetry is temporarily unavailable. Serving verified historical baseline from cache.',
+            };
+          }
         }
 
         // HARD PRODUCTION BOUNDARY: In production, mock fixtures are strictly forbidden!
@@ -155,13 +189,50 @@ export const airQualityService = {
         }
       }
 
-      // 7. Calculate CPCB NAQI and individual sub-indices
-      const { measurements, aqiResult } = calculateCpcbAqi(inputs);
+      // 7. Calculate acute Short-Term Indicator and individual sub-indices
+      const { measurements, aqiResult, shortTermIndicator } = calculateCpcbAqi(inputs);
+
+      // 7b. Query rolling 24-hour observation history to calculate Official CPCB Regulatory AQI
+      let officialCpcbAqi: OfficialCpcbAqiResult;
+      try {
+        const observationDate = new Date(inputs[0]?.measurementTimestampUtc || new Date());
+        const rollingHistory = await airQualityRepository.getRolling24HourHistory(station.id, observationDate);
+
+        const hourlySamples: HourlySampleInput[] = [];
+        for (const row of rollingHistory) {
+          if (row.pm25 !== null) hourlySamples.push({ pollutant: 'PM2.5', value: row.pm25, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
+          if (row.pm10 !== null) hourlySamples.push({ pollutant: 'PM10', value: row.pm10, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
+          if (row.no2 !== null) hourlySamples.push({ pollutant: 'NO2', value: row.no2, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
+          if (row.so2 !== null) hourlySamples.push({ pollutant: 'SO2', value: row.so2, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
+          if (row.co !== null) hourlySamples.push({ pollutant: 'CO', value: row.co, unit: 'mg/m³', measurementTimestamp: row.measurementTimestamp });
+          if (row.o3 !== null) hourlySamples.push({ pollutant: 'O3', value: row.o3, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
+          if (row.nh3 !== null) hourlySamples.push({ pollutant: 'NH3', value: row.nh3, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
+          if (row.pb !== null) hourlySamples.push({ pollutant: 'Pb', value: row.pb, unit: 'µg/m³', measurementTimestamp: row.measurementTimestamp });
+        }
+        for (const inp of inputs) {
+          hourlySamples.push({
+            pollutant: inp.pollutant,
+            value: inp.value,
+            unit: inp.unit,
+            measurementTimestamp: inp.measurementTimestampUtc || observationDate,
+          });
+        }
+        officialCpcbAqi = calculateOfficialCpcbAqi(hourlySamples, observationDate);
+      } catch {
+        officialCpcbAqi = calculateCpcbAqi(inputs).officialCpcbAqi;
+      }
 
       // 8. Evaluate data freshness & construct 4-timestamp model
       const observationTimestampUtc = inputs[0]?.measurementTimestampUtc || new Date().toISOString();
       const freshness = evaluateFreshness(observationTimestampUtc);
       const timestamps = buildTelemetryTimestamps(observationTimestampUtc, new Date());
+
+      const provenanceType: ProvenanceType =
+        usedProvider === 'MOCK_FIXTURE'
+          ? 'SYNTHETIC_FIXTURE'
+          : isLiveFeed
+          ? 'VERIFIED_EXTERNAL_OBSERVATION'
+          : 'UNKNOWN_PROVENANCE';
 
       const provenanceStatus: TelemetryProvenanceStatus =
         usedProvider === 'MOCK_FIXTURE'
@@ -174,11 +245,14 @@ export const airQualityService = {
 
       const record: CanonicalAirQualityRecord = {
         status: provenanceStatus,
+        provenanceType,
         station: {
           ...station,
           distanceKm: selection.distanceKm ?? station.distanceKm,
         },
         measurements,
+        officialCpcbAqi,
+        shortTermIndicator,
         cpcbAqi: aqiResult,
         timestamps,
         freshness: {
@@ -215,6 +289,9 @@ export const airQualityService = {
             stationId: station.id,
             stationName: station.name,
             sourceProvider: usedProvider,
+            provenanceType,
+            averagingPeriod: '1_HOUR',
+            completenessHours: 1.0,
             aqiValue: aqiResult.aqi,
             aqiCategory: aqiResult.category as any,
             dominantPollutant: aqiResult.dominantPollutant,
@@ -254,7 +331,8 @@ export const airQualityService = {
   reconstructRecordFromSnapshot(
     snapshot: any,
     freshness: { state: FreshnessState; ageMinutes: number; isStale: boolean; measurementLocalTime?: string },
-    provenanceStatus: TelemetryProvenanceStatus
+    provenanceStatus: TelemetryProvenanceStatus,
+    provenanceType: ProvenanceType = 'UNKNOWN_PROVENANCE'
   ): CanonicalAirQualityRecord {
     const inputs: RawPollutantInput[] = [];
     if (snapshot.pm25 !== null && snapshot.pm25 !== undefined) {
@@ -282,15 +360,37 @@ export const airQualityService = {
       inputs.push({ pollutant: 'Pb', value: snapshot.pb, unit: 'µg/m³' });
     }
 
-    const { measurements, aqiResult } = calculateCpcbAqi(inputs);
+    const { measurements, aqiResult, shortTermIndicator } = calculateCpcbAqi(inputs);
     const timestamps = buildTelemetryTimestamps(
       snapshot.measurementTimestamp,
       snapshot.fetchedAt,
       snapshot.fetchedAt
     );
 
+    const isRegulatoryCompliant = (snapshot.completenessHours ?? 1.0) >= 16.0;
+    const officialCpcbAqi: OfficialCpcbAqiResult = {
+      status: isRegulatoryCompliant ? 'AVAILABLE' : 'INSUFFICIENT_COMPLETENESS',
+      aqi: isRegulatoryCompliant ? snapshot.aqiValue : null,
+      category: isRegulatoryCompliant ? (snapshot.aqiCategory as any) : 'UNAVAILABLE',
+      dominantPollutant: isRegulatoryCompliant ? (snapshot.dominantPollutant as any) : null,
+      dominantSubIndex: isRegulatoryCompliant ? snapshot.aqiValue : null,
+      completenessHours: snapshot.completenessHours ?? 1.0,
+      minRequiredHours: 16.0,
+      isRegulatoryCompliant,
+      averagingPeriod: '24_HOUR',
+      subIndices: shortTermIndicator.subIndices,
+      healthGuidance: isRegulatoryCompliant
+        ? (CPCB_HEALTH_STATEMENTS[snapshot.aqiCategory as CpcbCategory] || CPCB_HEALTH_STATEMENTS.UNAVAILABLE)
+        : CPCB_HEALTH_STATEMENTS.UNAVAILABLE,
+      methodology: 'CPCB_NAQI_INDIA_2014',
+      reason: isRegulatoryCompliant
+        ? 'Official 24-hour CPCB regulatory average with validated completeness.'
+        : `Snapshot observation represents ${snapshot.completenessHours ?? 1} hour(s) of continuous data. Official CPCB regulatory AQI mandates at least 16 hours continuous data completeness.`,
+    };
+
     return {
       status: provenanceStatus,
+      provenanceType,
       station: {
         id: snapshot.stationId || 'cached_station',
         name: snapshot.stationName || 'Regional Telemetry Station',
@@ -304,6 +404,8 @@ export const airQualityService = {
         sourceProvider: (snapshot.sourceProvider as any) || 'CPCB_CAAQMS',
       },
       measurements,
+      officialCpcbAqi,
+      shortTermIndicator,
       cpcbAqi: aqiResult,
       timestamps,
       freshness: {
@@ -318,7 +420,12 @@ export const airQualityService = {
         license: 'Government Open Data License (GODL) India',
         attributionUrl: 'https://cpcb.nic.in',
         isLiveFeed: false,
-        notice: 'Retrieved from verified local atmospheric telemetry cache.',
+        notice:
+          provenanceType === 'DEVELOPMENT_SEED'
+            ? 'Retrieved from verified regional development baseline cache. Historical baseline record.'
+            : provenanceType === 'SYNTHETIC_FIXTURE'
+            ? 'DEMONSTRATION FIXTURE: Offline test baseline for verification purposes. Never permitted in production.'
+            : 'Retrieved from verified local atmospheric telemetry cache.',
       },
     };
   },

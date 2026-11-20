@@ -107,13 +107,17 @@ export function AirQualityRadar({
     }
   }, [householdLat, householdLon, householdCity]);
 
-  const categoryKey = data?.cpcbAqi?.category || data?.category || 'INSUFFICIENT_DATA';
+  const shortTermIndicator = data?.shortTermIndicator;
+  const officialCpcb = data?.officialCpcbAqi;
+  const provenanceType: string = data?.provenanceType || 'UNKNOWN_PROVENANCE';
+
+  const categoryKey = shortTermIndicator?.category || data?.cpcbAqi?.category || data?.category || 'INSUFFICIENT_DATA';
   const categoryStyle = CPCB_CATEGORY_STYLES[categoryKey] || CPCB_CATEGORY_STYLES.INSUFFICIENT_DATA;
-  const aqiValue = data?.cpcbAqi?.aqi ?? data?.aqi ?? null;
-  const dominant = data?.cpcbAqi?.dominantPollutant ?? data?.dominantPollutant ?? 'N/A';
+  const aqiValue = shortTermIndicator?.indicatorValue ?? data?.cpcbAqi?.aqi ?? data?.aqi ?? null;
+  const dominant = shortTermIndicator?.dominantPollutant ?? data?.cpcbAqi?.dominantPollutant ?? data?.dominantPollutant ?? 'N/A';
   const stationName = data?.station?.name || data?.stationName || 'Regional Telemetry Station';
   const distanceKm = data?.station?.distanceKm;
-  const health = data?.cpcbAqi?.healthGuidance;
+  const health = shortTermIndicator?.healthGuidance || data?.cpcbAqi?.healthGuidance;
 
   // Provenance & Timestamps
   const provenanceStatus: 'LIVE' | 'CACHED' | 'STALE' | 'MOCK' | 'NO_DATA' =
@@ -123,7 +127,22 @@ export function AirQualityRadar({
   const observationTime = data?.timestamps?.observationLocalTime || data?.freshness?.measurementLocalTime || 'Recent';
   const retrievalTime = data?.timestamps?.retrievalLocalTime || 'Recent Query';
   const averagingNotice = data?.cpcbAqi?.averagingNotice || data?.timestamps?.averagingNotice || 'Acute 1-hour sensor proxy evaluated against CPCB breakpoints. Regulatory CPCB standard mandates a 24-hour average.';
-  const isInstantaneous = data?.cpcbAqi?.isInstantaneousProxy ?? data?.timestamps?.isInstantaneousProxy ?? true;
+  const isInstantaneous = true;
+
+  const getProvenanceTypeLabel = (type: string) => {
+    switch (type) {
+      case 'VERIFIED_EXTERNAL_OBSERVATION':
+        return 'Verified Live Sensor Feed (OpenAQ / CPCB)';
+      case 'DEVELOPMENT_SEED':
+        return 'Regional Baseline Cache (Seed Data)';
+      case 'HISTORICAL_IMPORTED':
+        return 'Historical Continuous Monitoring Record';
+      case 'SYNTHETIC_FIXTURE':
+        return 'Demonstration Fixture (Test Baseline)';
+      default:
+        return 'Atmospheric Ingestion Telemetry';
+    }
+  };
 
   // Render Provenance Badge configuration
   const renderProvenanceBadge = () => {
@@ -319,22 +338,23 @@ export function AirQualityRadar({
         {/* Live / Verified Telemetry Display */}
         {!loading && !error && !isNoData && data && (
           <div className="space-y-6">
-            {/* Main AQI Hero Gauge Card */}
+            {/* Main AQI Hero Gauge Card: Short-Term Air Quality Indicator */}
             <div className={`p-5 rounded-xl border ${categoryStyle.bg} ${categoryStyle.border} transition-all`}>
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-semibold text-[#68766C] uppercase tracking-wider">
-                      CPCB National AQI
+                      Short-Term Indicator
                     </span>
                     <Badge variant={categoryStyle.badgeVariant} size="sm">
                       {categoryKey.replace(/_/g, ' ')}
                     </Badge>
-                    {isInstantaneous && (
-                      <span className="text-[10px] font-semibold px-2 py-0.5 bg-amber-100/80 rounded border border-amber-300 text-amber-800">
-                        Acute 1-Hour Proxy
-                      </span>
-                    )}
+                    <span
+                      className="text-[10px] font-semibold px-2 py-0.5 bg-amber-100/90 rounded border border-amber-300 text-amber-900"
+                      data-testid="short-term-indicator-badge"
+                    >
+                      1-Hour Acute Proxy
+                    </span>
                     {dominant !== 'N/A' && (
                       <span className="text-xs font-medium px-2 py-0.5 bg-white/80 rounded border border-[#E2E8DE] text-[#27352D]">
                         Dominant: <strong>{dominant}</strong>
@@ -356,8 +376,8 @@ export function AirQualityRadar({
                   </p>
                 </div>
 
-                {/* Station Location & Metadata Badge */}
-                <div className="bg-white/90 p-4 rounded-lg border border-[#E2E8DE] shadow-xs space-y-1.5 md:min-w-[300px]">
+                {/* Station Location & Provenance Metadata Badge */}
+                <div className="bg-white/90 p-4 rounded-lg border border-[#E2E8DE] shadow-xs space-y-1.5 md:min-w-[320px]">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-[#27352D]">
                     <MapPin className="w-3.5 h-3.5 text-[#397A55]" />
                     <span className="truncate">{stationName}</span>
@@ -375,10 +395,42 @@ export function AirQualityRadar({
                     <Database className="w-3 h-3 text-[#68766C]" />
                     <strong>Retrieved:</strong> {retrievalTime}
                   </div>
-                  <div className="text-[10px] text-[#397A55] font-medium pt-0.5">
-                    Agency: {data?.station?.operatingAgency || 'CPCB / State Pollution Control Board'}
+                  <div className="text-[10px] text-[#397A55] font-semibold pt-0.5 border-t border-[#E2E8DE]/60">
+                    Provenance: {getProvenanceTypeLabel(provenanceType)}
                   </div>
                 </div>
+              </div>
+
+              {/* Official CPCB 24-Hour Regulatory AQI Status Card */}
+              <div
+                className="mt-4 p-3.5 rounded-lg border bg-white/95 shadow-2xs space-y-2 border-[#E2E8DE]"
+                data-testid="official-cpcb-status"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <FileCheck2 className={`w-4 h-4 ${officialCpcb?.status === 'AVAILABLE' ? 'text-[#397A55]' : 'text-[#68766C]'}`} />
+                    <span className="text-xs font-bold text-[#27352D]">
+                      Official CPCB 24-Hour Regulatory AQI:
+                    </span>
+                    {officialCpcb?.status === 'AVAILABLE' ? (
+                      <Badge variant="success" size="sm" className="font-bold">
+                        {officialCpcb.aqi} — {officialCpcb.category.replace(/_/g, ' ')}
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" size="sm" className="font-semibold text-[10px]">
+                        Unavailable (Insufficient Completeness)
+                      </Badge>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-[#68766C] font-medium">
+                    Completeness: <strong>{officialCpcb?.completenessHours ? Math.round(officialCpcb.completenessHours) : 1}/24 hrs</strong> (min. 16 hrs required)
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#556359] leading-snug">
+                  {officialCpcb?.status === 'AVAILABLE'
+                    ? 'Certified 24-hour CPCB regulatory average complying with MoEFCC 16-hour continuous data completeness protocol.'
+                    : 'Official CPCB 24-hour regulatory AQI mandates a rolling average with at least 16 hours continuous data completeness. The primary gauge displays the Acute 1-Hour Proxy for real-time exposure advisory.'}
+                </p>
               </div>
 
               {/* Acute Sensor Proxy vs Regulatory Standard Notice */}

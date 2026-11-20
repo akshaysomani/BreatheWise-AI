@@ -52,6 +52,16 @@ test.describe('Air Quality Intelligence Dashboard Integration (M4.1 Integrity)',
     await expect(radarCard).toContainText(/Averaging Standard:/i);
     await expect(radarCard).toContainText(/Acute 1-hour sensor/i);
 
+    // 4b. Verify Short-Term Indicator Badge & Official CPCB 24-Hour Regulatory Status Card
+    const shortTermBadge = page.locator('[data-testid="short-term-indicator-badge"]');
+    await expect(shortTermBadge).toBeVisible();
+    await expect(shortTermBadge).toContainText('1-Hour Acute Proxy');
+
+    const officialCpcbCard = page.locator('[data-testid="official-cpcb-status"]');
+    await expect(officialCpcbCard).toBeVisible();
+    await expect(officialCpcbCard).toContainText(/Official CPCB 24-Hour Regulatory AQI/i);
+    await expect(officialCpcbCard).toContainText(/Completeness:/i);
+
     // 5. Verify Provenance Badge is visible
     const provenanceBadge = radarCard.locator('[data-testid^="provenance-badge-"]');
     await expect(provenanceBadge).toBeVisible();
@@ -123,6 +133,11 @@ test.describe('Air Quality Intelligence Dashboard Integration (M4.1 Integrity)',
     // Verify regional chips remain scrollable / clickable on mobile
     const delhiChip = page.locator('button:has-text("Delhi (Anand Vihar)")');
     await expect(delhiChip).toBeVisible();
+
+    // Verify 390px iPhone viewport adaptation
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(radarCard).toBeVisible();
+    await expect(page.locator('[data-testid="official-cpcb-status"]')).toBeVisible();
   });
 
   test('Flow 3: API Zero-Fabrication Fallback for Remote / Out-of-Range Coordinates', async ({ request }) => {

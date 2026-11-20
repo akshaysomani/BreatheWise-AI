@@ -30,6 +30,14 @@ export const sourceProviderEnum = z.enum([
   'DATA_GOV_IN',
 ]);
 
+export const provenanceTypeEnum = z.enum([
+  'VERIFIED_EXTERNAL_OBSERVATION',
+  'HISTORICAL_IMPORTED',
+  'DEVELOPMENT_SEED',
+  'SYNTHETIC_FIXTURE',
+  'UNKNOWN_PROVENANCE',
+]);
+
 export const aqiSnapshotSchema = z.object({
   latitude: coordinateLatitudeSchema,
   longitude: coordinateLongitudeSchema,
@@ -54,6 +62,9 @@ export const aqiSnapshotSchema = z.object({
   pb: z.number().min(0).max(50).nullable().optional(),
   distanceKm: z.number().min(0).max(500).nullable().optional(),
   rawBreakdownJson: z.string().nullable().optional(),
-  measurementTimestamp: z.coerce.date(),
-  isStale: z.boolean().default(false),
+  measurementTimestamp: z.date(),
+  isStale: z.boolean().optional().default(false),
+  provenanceType: provenanceTypeEnum.optional().default('UNKNOWN_PROVENANCE'),
+  averagingPeriod: z.enum(['1_HOUR', '8_HOUR', '24_HOUR']).optional().default('1_HOUR'),
+  completenessHours: z.number().min(0).max(24).optional().default(1.0),
 });
