@@ -11,6 +11,11 @@ export async function GET(req: NextRequest) {
     return apiError('UNAUTHORIZED', 'Authentication required to access personal impact records.', 401);
   }
 
+  const rateLimit = checkRateLimit(`impact_get_${user.id}`, 60, 60_000);
+  if (!rateLimit.allowed) {
+    return apiError('RATE_LIMIT_EXCEEDED', 'Too many impact requests.', 429);
+  }
+
   try {
     const logs = await impactService.getLogs(user.id);
     const aggregates = await impactService.getAggregates(user.id);
@@ -18,7 +23,8 @@ export async function GET(req: NextRequest) {
     return apiSuccess({
       logs,
       aggregates,
-      standardsProvenance: 'Calculated using UK DEFRA & US EPA Standard Light Duty Passenger Factors (±15% uncertainty margin).',
+      standardsProvenance:
+        'Calculated using UK DEFRA / DESNZ 2023/2024 Passenger Transport Benchmark Factors (±15% uncertainty margin; assumes standard vehicle occupancy and UK electricity grid carbon intensity).',
     });
   } catch (error) {
     return handleApiError(error, 'GET /api/impact');

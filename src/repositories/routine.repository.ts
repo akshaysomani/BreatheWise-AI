@@ -24,21 +24,32 @@ export const routineRepository = {
 
   async update(userId: string, routineId: string, data: UpdateRoutineInput) {
     // Verifies user ownership before applying updates (IDOR protection)
+    const existing = await prisma.savedRoutine.findFirst({
+      where: { id: routineId, userId },
+    });
+
+    if (!existing) {
+      throw new Error('Routine not found or unauthorized');
+    }
+
     return prisma.savedRoutine.update({
-      where: {
-        id: routineId,
-        userId,
-      },
+      where: { id: routineId },
       data,
     });
   },
 
   async delete(userId: string, routineId: string) {
+    // Verifies user ownership before deletion (IDOR protection)
+    const existing = await prisma.savedRoutine.findFirst({
+      where: { id: routineId, userId },
+    });
+
+    if (!existing) {
+      throw new Error('Routine not found or unauthorized');
+    }
+
     return prisma.savedRoutine.delete({
-      where: {
-        id: routineId,
-        userId,
-      },
+      where: { id: routineId },
     });
   },
 };

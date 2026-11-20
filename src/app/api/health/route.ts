@@ -1,12 +1,11 @@
 import { NextRequest } from 'next/server';
 import prisma from '@/lib/db';
 import { apiSuccess, apiError, handleApiError } from '@/lib/api-response';
-import { checkRateLimit } from '@/lib/rate-limiter';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export async function GET(req: NextRequest) {
-  // Apply defensive rate-limiting (120 req/min for health check)
-  const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
-  const rateLimit = checkRateLimit(`health_${ip}`, 120, 60_000);
+  const clientIp = getClientIp(req);
+  const rateLimit = checkRateLimit(`health_${clientIp}`, 120, 60_000);
 
   if (!rateLimit.allowed) {
     return apiError('RATE_LIMIT_EXCEEDED', 'Too many health check requests.', 429);

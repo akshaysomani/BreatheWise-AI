@@ -3,12 +3,17 @@ import { apiSuccess, apiError, handleApiError } from '@/lib/api-response';
 import { getSessionUser } from '@/lib/auth-guard';
 import { householdService } from '@/services/household.service';
 import { createHouseholdProfileSchema } from '@/lib/validations';
-import { checkRateLimit } from '@/lib/rate-limiter';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export async function GET(req: NextRequest) {
   const user = await getSessionUser(req);
   if (!user) {
     return apiError('UNAUTHORIZED', 'Authentication required to access household profile.', 401);
+  }
+
+  const rateLimit = checkRateLimit(`profile_get_${user.id}`, 60, 60_000);
+  if (!rateLimit.allowed) {
+    return apiError('RATE_LIMIT_EXCEEDED', 'Too many profile requests.', 429);
   }
 
   try {

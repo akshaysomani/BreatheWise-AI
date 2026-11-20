@@ -3,11 +3,11 @@ import { apiSuccess, apiError, handleApiError } from '@/lib/api-response';
 import { getSessionUser } from '@/lib/auth-guard';
 import { communityService } from '@/services/community.service';
 import { createCommunityReportSchema } from '@/lib/validations';
-import { checkRateLimit } from '@/lib/rate-limiter';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export async function GET(req: NextRequest) {
-  const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
-  const rateLimit = checkRateLimit(`community_get_${ip}`, 60, 60_000);
+  const clientIp = getClientIp(req);
+  const rateLimit = checkRateLimit(`community_get_${clientIp}`, 60, 60_000);
   if (!rateLimit.allowed) {
     return apiError('RATE_LIMIT_EXCEEDED', 'Too many community feed requests.', 429);
   }

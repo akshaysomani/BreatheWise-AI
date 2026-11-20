@@ -9,6 +9,7 @@ export interface CadrAnalysis {
   actualACHWithCurrentPurifier: number | null;
   deficitCADR_CFM: number;
   scientificPlantNotice: string;
+  standardsNote: string;
 }
 
 export const householdService = {
@@ -20,15 +21,27 @@ export const householdService = {
     return householdRepository.upsert(userId, data);
   },
 
+  /**
+   * Calculates Clean Air Delivery Rate (CADR) requirements.
+   * 
+   * SCIENTIFIC BASIS & STANDARDS AUDIT (M2.1):
+   * - DESIGN TARGET: 5.0 Air Changes per Hour (ACH) is an acute indoor smog and wildfire smoke
+   *   filtration design target recommended by US EPA, CDC, and Harvard T.H. Chan School of Public Health.
+   * - STANDARDS DISTINCTION: ASHRAE Standard 62.2 specifies minimum outdoor ventilation rates
+   *   (~0.35 ACH outdoor air exchange for acceptable IAQ), which is distinct from recirculated
+   *   HEPA particulate filtration CADR.
+   * - UNIT CONVERSIONS: 1 CFM (cubic feet per minute) = 1.69901 m³/h (cubic meters per hour).
+   *   Formula: CADR (CFM) = (Room Volume in cu ft * Target ACH) / 60 minutes.
+   */
   calculateCadrRequirements(
     floorAreaSqFt: number,
     ceilingHeightFt = 9.0,
     currentPurifierCADR: number | null = null,
-    targetACH = 5.0 // 5.0 air changes per hour recommended for acute winter smog
+    targetACH = 5.0 // Particulate filtration design target during acute smog episodes
   ): CadrAnalysis {
     const roomVolume = floorAreaSqFt * ceilingHeightFt;
     const requiredCFM = Math.round((roomVolume * targetACH) / 60);
-    const requiredM3H = Math.round(requiredCFM * 1.699);
+    const requiredM3H = Math.round(requiredCFM * 1.69901);
 
     let isCurrentPurifierAdequate = false;
     let actualACH: number | null = null;
@@ -49,11 +62,15 @@ export const householdService = {
       actualACHWithCurrentPurifier: actualACH,
       deficitCADR_CFM: deficit,
       scientificPlantNotice:
-        'Indoor houseplants produce negligible Clean Air Delivery Rates (<0.05 CADR) in residential spaces. Rely exclusively on mechanical HEPA filtration for acute smog protection.',
+        'Indoor houseplants produce negligible Clean Air Delivery Rates (<0.05 CADR) in residential spaces. Rely exclusively on mechanical true HEPA filtration (H13/H14) for particulate smog defense.',
+      standardsNote:
+        'Target ACH is an EPA/CDC air cleaning guideline for acute particulate defense, distinct from ASHRAE 62.2 outdoor air ventilation minimums.',
     };
   },
 
-  evaluateVulnerabilityTier(members: Array<{ ageGroup: string; hasAsthma: boolean; hasHeartCondition: boolean; isPregnant: boolean }>) {
+  evaluateVulnerabilityTier(
+    members: Array<{ ageGroup: string; hasAsthma: boolean; hasHeartCondition: boolean; isPregnant: boolean }>
+  ) {
     const hasInfant = members.some((m) => m.ageGroup === 'INFANT');
     const hasSenior = members.some((m) => m.ageGroup === 'SENIOR');
     const hasAsthma = members.some((m) => m.hasAsthma);

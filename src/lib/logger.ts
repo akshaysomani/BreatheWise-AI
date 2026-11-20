@@ -1,7 +1,7 @@
 /**
  * Sanitized Application Logger
- * Automatically redacts sensitive fields (passwords, tokens, keys, emails, coordinates)
- * to comply with OWASP ASVS and NIST SP 800-53 security logging requirements.
+ * Automatically redacts sensitive fields (passwords, tokens, keys, medical conditions, coordinates)
+ * to comply with OWASP ASVS, GDPR Special Category Data, and NIST SP 800-53 security logging requirements.
  */
 
 const SENSITIVE_KEYS = new Set([
@@ -15,6 +15,15 @@ const SENSITIVE_KEYS = new Set([
   'gemini_api_key',
   'openaq_api_key',
   'session_secret',
+  // Sensitive Health & Special Category Data (M2.1 privacy audit)
+  'hasasthma',
+  'hasheartcondition',
+  'ispregnant',
+  'asthma',
+  'heartcondition',
+  'medicalcondition',
+  'respiratorycondition',
+  'cardiovascularcondition',
 ]);
 
 function redactObject(obj: unknown, depth = 0): unknown {

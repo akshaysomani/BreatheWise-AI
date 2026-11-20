@@ -33,7 +33,7 @@ In strict adherence to the MOSAIC architectural roadmap and competition rules:
 ## 2. Database Architecture & Prisma Schema
 
 ### 2.1 Storage & Schema Models (`prisma/schema.prisma`)
-The relational data model consists of 7 normalized models:
+The relational data model consists of 8 normalized models:
 
 1. **`User`**:
    - `id` (String UUID @id @default(uuid()))

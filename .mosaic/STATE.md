@@ -2,8 +2,8 @@
 **Project:** BreatheWise AI  
 **Competition:** Prompt War — Challenge 6: Urban Air Quality Assistant  
 **Target Score:** 97.50+ / 100  
-**Current Phase:** M2 — Backend & Database  
-**Document Version:** 1.2.0  
+**Current Phase:** M2.1 — Security Remediation & Independent Verification  
+**Document Version:** 1.2.1  
 **Last Updated:** 2026-11-20  
 
 ---
@@ -30,26 +30,26 @@
 ---
 
 ## 3. Current Module Status
-- **Current Module:** `M2 — Backend & Database`
-- **Status:** **COMPLETED & VERIFIED (52/52 Tests Passing)**
+- **Current Module:** `M2.1 — Security Remediation & Independent Verification`
+- **Status:** **COMPLETED & INDEPENDENTLY VERIFIED (64/64 Tests Passing)**
 - **Completion Evidence:**
-  - Complete normalized relational schema with 7 models in `prisma/schema.prisma` (`User`, `HouseholdProfile`, `HouseholdMember`, `AirQualitySnapshot`, `SavedRoutine`, `ImpactLog`, `CommunityReport`, `RecommendationRecord`).
-  - SQLite database initialized and migrated (`20261120100156_init`) with deterministic seed script `prisma/seed.mjs`.
-  - Type-safe data access layer implemented with repositories in `src/repositories/`.
-  - Scientific domain services in `src/services/` for ASHRAE HEPA CADR sizing (5.0 ACH), DEFRA commute emissions avoidance, EPA AQI breakpoint conversion, and privacy centroid fuzzing (2 decimal places / ~1.1 km).
-  - Centralized defensive Zod validation schemas in `src/lib/validations/` with strict coordinate bounding (-90..90, -180..180) and XSS injection rejection.
-  - Complete API route suite in `src/app/api/` (`/api/health`, `/api/location/coordinates`, `/api/household`, `/api/aqi`, `/api/routines`, `/api/impact`, `/api/community/reports`, `/api/recommendations`).
-  - Defensive security guards implemented: sliding-window rate limiter (`src/lib/rate-limiter.ts`), authentication boundary guard (`src/lib/auth-guard.ts`), credential-redacting logger (`src/lib/logger.ts`), and sanitized API envelope handlers (`src/lib/api-response.ts`).
-  - 52/52 Vitest automated tests passing across 5 suites (100% pass rate).
-  - TypeScript compilation: 0 errors (`npx tsc --noEmit`).
-  - Production build: Successfully compiled via `next build --webpack` with external Prisma package configuration.
+  - Audited and remediated authentication trust: client-supplied `x-authenticated-user-id` header completely removed; replaced with a cryptographically verified HMAC-SHA256 session token adapter (`v1.<payload>.<sig>`) with constant-time signature comparison and strict fail-closed boundary.
+  - Sanitized and hardened rate limiting: `getClientIp` enforces strict IPv4/IPv6 regex checks to prevent header injection; in-memory process scope and Redis clustering specification for production transparently documented.
+  - Sensitive health data privacy: medical diagnoses (`hasAsthma`, `hasHeartCondition`, `isPregnant`) added to automated log redaction; private household queries strictly user-isolated.
+  - Scientific claims refined: 5.0 ACH qualified as an EPA/CDC wildfire/smog particulate air cleaning target (distinct from ASHRAE 62.2 outdoor air minimums); UK DEFRA 2023/2024 emission factors cited with grid intensity caveats; US EPA February 2024 Revised PM2.5 AQI breakpoints implemented with strict 0.1 µg/m³ truncation; commuter minute ventilation ($V_E$) modeled; coordinate fuzzing qualified as spatial quantization (~1.1 km).
+  - Database model count verified: confirmed exactly **8 normalized models** in `prisma/schema.prisma` (`User`, `HouseholdProfile`, `HouseholdMember`, `AirQualitySnapshot`, `SavedRoutine`, `ImpactLog`, `CommunityReport`, `RecommendationRecord`).
+  - Automated testing: **64/64 tests passing** across 6 test suites including 12 comprehensive security regression tests in `src/test/security-remediation.test.ts`.
+  - Static analysis & build: `npx tsc --noEmit` passing (0 errors), `npx prisma validate` passing, `npm run build` Webpack production build succeeding.
+  - Dependency audit: `npm audit` reports **0 vulnerabilities**.
+  - Git secret scan: 0 live credentials in tracked files.
 
 ---
 
 ## 4. Completed Modules
 - [x] **M0: Discovery & Architecture** (Approved & Verified)
 - [x] **M1: Design System & Frontend Foundation** (Completed & Verified)
-- [x] **M2: Backend & Database** (Completed & Verified — 52/52 tests)
+- [x] **M2: Backend & Database** (Completed & Verified)
+- [x] **M2.1: Security Remediation & Independent Verification** (Completed & Verified — 64/64 tests)
 
 ---
 
@@ -66,25 +66,26 @@
 
 ## 6. Architecture & Design Decisions
 1. **Monolithic Full-Stack Architecture (ADR-001):** Next.js 16.4.6 App Router, React 19, TypeScript.
-2. **Database Engine & ORM (ADR-002):** SQLite for deterministic zero-dependency local development + Prisma ORM 6.4.1 singleton. Prepared for seamless Postgres switch via environment connection string.
-3. **Repository Pattern (ADR-003):** Strict encapsulation of Prisma queries in `src/repositories/` to enforce business logic separation and testability.
-4. **Boundary Validation (ADR-004):** Centralized Zod schemas in `src/lib/validations/` executed before any service or database call.
-5. **Privacy by Design (ADR-005):** Geolocation coordinates fuzzed to 2 decimal places (~1.1 km) before storage/display for community reports.
+2. **Database Engine & ORM (ADR-002):** SQLite for deterministic local verification + Prisma ORM 6.4.1 singleton. 8 normalized models.
+3. **Repository Pattern (ADR-003):** Strict encapsulation of Prisma queries in `src/repositories/` with ownership verification before update/delete.
+4. **Boundary Validation (ADR-004):** Centralized Zod schemas in `src/lib/validations/` with strict coordinate bounding (-90..90, -180..180) and XSS injection rejection.
+5. **Privacy by Design (ADR-005):** Geolocation coordinates quantized to 2 decimal places (~1.1 km latitude, ~0.97 km longitude at 28.6°N).
 6. **Community Data Demarcation (ADR-006):** Invariant flag `isOfficialData: false` enforced on all citizen-submitted observations.
-7. **Design Tokens & Brand Theme (ADR-007):** Exclusively light theme. Primary `#397A55`, Primary Hover `#2F6647`, Secondary `#718C72`, Accent `#D69B47`, Background `#F7F8F3`, Surface `#FFFFFF`, Surface Secondary `#EEF3EA`, Border `#E2E8DE`, Text `#27352D`, Muted `#68766C`, Success `#287A4B`, Warning `#A86B16`, Error `#B8423D`.
-8. **Typography Pairing (ADR-008):** Manrope (Headings) + DM Sans (Body and tabular figures).
-9. **Custom Vector SVG Hero (ADR-009):** Custom-coded vector illustration depicting clean air circulation, city silhouette, and HEPA-protected home.
-10. **Strict Sample Fixture Demarcation (ADR-010):** All dashboard cards in M1 carry explicit `SAMPLE FIXTURE — NOT LIVE DATA` indicators to guarantee scientific integrity before M4 API activation.
+7. **Cryptographic Session Boundary (ADR-007):** Constant-time HMAC-SHA256 session token adapter. Zero trust for client-supplied user ID headers.
+8. **Design Tokens & Brand Theme (ADR-008):** Exclusively light theme (`#397A55` Forest Green, `#F7F8F3` Alabaster).
+9. **Typography Pairing (ADR-009):** Manrope (Headings) + DM Sans (Body and figures).
+10. **Strict Fixture Demarcation (ADR-010):** Unactivated data cards carry explicit `SAMPLE FIXTURE — NOT LIVE DATA` labels until M4/M5.
 
 ---
 
 ## 7. Technology Stack
 - **Framework:** Next.js 16.4.6 (App Router) / React 19.0.0
 - **Language:** TypeScript 5.x / ES2022
-- **Database & ORM:** SQLite + Prisma ORM 6.4.1
+- **Database & ORM:** SQLite + Prisma ORM 6.4.1 (8 models)
 - **Validation:** Zod v3.24
-- **Styling:** Tailwind CSS v4 (`@tailwindcss/postcss`) with CSS custom properties
-- **Iconography:** Lucide React (vector only)
+- **Security:** HMAC-SHA256 session token adapter, timing-safe equality, PII/health logger redaction
+- **Styling:** Tailwind CSS v4 (`@tailwindcss/postcss`)
+- **Iconography:** Lucide React
 - **Testing:** Vitest 5.1.1 + Testing Library (`@testing-library/react`, `@testing-library/jest-dom`)
 
 ---
@@ -100,78 +101,31 @@
 
 ---
 
-## 9. Security & Privacy Audit Findings (M2)
-- **Authentication Guard:** Protected endpoints (`/api/household`, `/api/routines`, `/api/impact`, `/api/recommendations`) return HTTP 401 if unauthenticated.
-- **Rate Limiting:** Sliding-window limiter returns HTTP 429 and `Retry-After` header when IP threshold is breached.
-- **SQL Injection:** Impossible by design; Prisma parameterized prepared queries only. Zero raw SQL string interpolation.
-- **Input Validation & XSS:** Zod schemas reject HTML/script tags and validate coordinate ranges (-90..90, -180..180).
-- **Log Sanitization:** PII and API keys (`password`, `token`, `secret`, `key`) redacted to `[REDACTED]`.
-- **Location Privacy:** 2-decimal truncation (~1.1 km) prevents exact home address identification.
-- **Community Integrity:** Citizen reports hardcoded with `isOfficialData: false`.
+## 9. Security & Privacy Audit Findings (M2.1)
+- **Authentication Trust:** Forged `x-authenticated-user-id` headers rejected with HTTP 401; requires signed HMAC token.
+- **Cross-User Isolation (IDOR):** Verified on household profiles, routines, impact logs, and recommendations.
+- **Rate Limiting:** IP extraction sanitized; in-memory process scope documented with Redis specification for clustering.
+- **Log Sanitization:** Sensitive medical conditions (`hasAsthma`, `hasHeartCondition`, `isPregnant`) and credentials redacted.
+- **Dependency Audit:** `npm audit` reports **0 vulnerabilities**.
+- **Git Credential Scan:** 0 exposed secrets in tracked files.
 
 ---
 
 ## 10. Automated Test Results
-- **Vitest Unit, Service & API Tests:** 52 passed, 0 failed across 5 test suites (Duration: ~2.47s).
+- **Vitest Suites:** 6 test files, 64 passed, 0 failed (Duration: ~2.57s).
 - **TypeScript Compilation:** Passed with 0 errors (`npx tsc --noEmit`).
-- **Production Build:** Succeeded (`npm run build` via `next build --webpack`).
-- **Database Migrations:** Clean SQLite schema created and seeded with test fixtures.
+- **Prisma Schema Validation:** Validated with 0 errors (`npx prisma validate`).
+- **Production Build:** Succeeded (`npm run build`).
 
 ---
 
-## 11. Files Created or Modified in M2
-- `prisma/schema.prisma` (Normalized schema: User, HouseholdProfile, HouseholdMember, AirQualitySnapshot, SavedRoutine, ImpactLog, CommunityReport, RecommendationRecord)
-- `prisma/migrations/20261120100156_init/migration.sql` (Initial deterministic SQLite migration)
-- `prisma/seed.mjs` (Development fixtures seed script)
-- `src/lib/db.ts` (PrismaClient singleton)
-- `src/lib/logger.ts` (Sanitized logger with PII and credential redaction)
-- `src/lib/rate-limiter.ts` (Defensive sliding-window rate limiter)
-- `src/lib/api-response.ts` (Standardized JSON API envelopes and error interceptor)
-- `src/lib/auth-guard.ts` (Authentication session guard)
-- `src/lib/validations/common.schema.ts` (Coordinates, pagination, sanitized strings)
-- `src/lib/validations/household.schema.ts` (Household profile, member, and vulnerability validations)
-- `src/lib/validations/air-quality.schema.ts` (Pollutant ranges, AQI bounds 0..1000)
-- `src/lib/validations/routine.schema.ts` (Commute transit modes, distance, 24h format)
-- `src/lib/validations/impact.schema.ts` (Action types, CO2e, PM2.5, confidence intervals)
-- `src/lib/validations/community.schema.ts` (Citizen report types, severity, descriptions)
-- `src/lib/validations/recommendation.schema.ts` (6-field explainability contract)
-- `src/repositories/household.repository.ts` (Household and member data access)
-- `src/repositories/air-quality.repository.ts` (Air quality snapshot queries and time-series)
-- `src/repositories/routine.repository.ts` (Commute routine data access)
-- `src/repositories/impact.repository.ts` (Impact logging and mathematical aggregate queries)
-- `src/repositories/community.repository.ts` (Fuzzed community reports data access)
-- `src/repositories/recommendation.repository.ts` (Explainable recommendations storage)
-- `src/services/household.service.ts` (ASHRAE HEPA CADR calculator & vulnerability evaluator)
-- `src/services/impact.service.ts` (DEFRA carbon & particulate avoidance calculator)
-- `src/services/community.service.ts` (2-decimal centroid privacy fuzzing & official data demarcation)
-- `src/services/routine.service.ts` (Commute inhaled dose & emissions estimator)
-- `src/services/air-quality.service.ts` (EPA piecewise linear AQI interpolation & staleness detector)
-- `src/app/api/health/route.ts` (GET health check with db ping and uptime)
-- `src/app/api/location/coordinates/route.ts` (GET location coordinates validation & fuzzing)
-- `src/app/api/household/route.ts` (GET & POST household profile and members)
-- `src/app/api/aqi/route.ts` (GET local AQI snapshot from cache)
-- `src/app/api/routines/route.ts` (GET & POST saved commute routines)
-- `src/app/api/impact/route.ts` (GET & POST verified impact logs and stats)
-- `src/app/api/community/reports/route.ts` (GET & POST citizen observation reports)
-- `src/app/api/recommendations/route.ts` (GET & POST 6-field structured recommendations)
-- `src/test/database.test.ts` (6 database constraint and repository unit tests)
-- `src/test/validations.test.ts` (13 Zod validation schema tests)
-- `src/test/services.test.ts` (9 mathematical algorithm and domain service tests)
-- `src/test/security-api.test.ts` (8 API endpoint, auth guard, rate limit, and logger tests)
-- `next.config.mjs` (Configured serverExternalPackages: ['@prisma/client'])
-- `package.json` (Added build:webpack and locked Prisma 6.4.1)
-- `.mosaic/M2_BACKEND_DATABASE_REPORT.md` (Detailed backend and database documentation)
-- `.mosaic/STATE.md` (Updated state ledger v1.2.0)
+## 11. Known Limitations & Module Boundaries
+- The cryptographic session adapter is active for API protection; full login forms, cookie session issuance, and user onboarding UI are scheduled for **Module M3**.
+- Live third-party AQI provider integrations (OpenAQ v3, Copernicus CAMS, Open-Meteo) are scheduled for **Module M4**.
+- Generative AI recommendation reasoning (Gemini API) is scheduled for **Module M5**.
 
 ---
 
-## 12. Known Limitations & Module Boundaries
-- The current backend endpoints serve structured database fixtures and mathematical calculators. Live third-party AQI provider integrations (OpenAQ v3, Open-Meteo) are strictly scheduled for Module M4.
-- Generative AI recommendation orchestration (Gemini API / multi-provider LLM) is strictly scheduled for Module M5.
-- User session authentication flows (passwords, JWT/cookies, profile onboarding UI) are scheduled for Module M3.
-
----
-
-## 13. Exact Next Authorized Module
+## 12. Exact Next Authorized Module
 - **`M3 — Authentication and Dashboard`**
 - Do NOT begin M3 until authorized by user / MOSAIC prompt.

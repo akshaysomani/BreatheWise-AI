@@ -11,6 +11,11 @@ export async function GET(req: NextRequest) {
     return apiError('UNAUTHORIZED', 'Authentication required to view saved commute routines.', 401);
   }
 
+  const rateLimit = checkRateLimit(`routine_get_${user.id}`, 60, 60_000);
+  if (!rateLimit.allowed) {
+    return apiError('RATE_LIMIT_EXCEEDED', 'Too many routine requests.', 429);
+  }
+
   try {
     const routines = await routineService.getUserRoutines(user.id);
     return apiSuccess({ routines });

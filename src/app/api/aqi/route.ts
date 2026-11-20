@@ -2,11 +2,11 @@ import { NextRequest } from 'next/server';
 import { apiSuccess, apiError, handleApiError } from '@/lib/api-response';
 import { coordinatesQuerySchema } from '@/lib/validations';
 import { airQualityService } from '@/services/air-quality.service';
-import { checkRateLimit } from '@/lib/rate-limiter';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export async function GET(req: NextRequest) {
-  const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
-  const rateLimit = checkRateLimit(`aqi_${ip}`, 60, 60_000);
+  const clientIp = getClientIp(req);
+  const rateLimit = checkRateLimit(`aqi_${clientIp}`, 60, 60_000);
   if (!rateLimit.allowed) {
     return apiError('RATE_LIMIT_EXCEEDED', 'Too many air quality queries.', 429);
   }
