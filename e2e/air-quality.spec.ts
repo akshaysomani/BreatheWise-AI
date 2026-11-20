@@ -59,7 +59,7 @@ test.describe('Air Quality Intelligence Dashboard Integration (M4.1 Integrity)',
 
     const officialCpcbCard = page.locator('[data-testid="official-cpcb-status"]');
     await expect(officialCpcbCard).toBeVisible();
-    await expect(officialCpcbCard).toContainText(/Official CPCB 24-Hour Regulatory AQI/i);
+    await expect(officialCpcbCard).toContainText(/CPCB National AQI/i);
     await expect(officialCpcbCard).toContainText(/Completeness:/i);
 
     // 5. Verify Provenance Badge is visible

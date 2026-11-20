@@ -106,10 +106,14 @@ export interface PollutantCompletenessAudit {
   averagingPeriodHours: 24 | 8;        // 24 for PM2.5, PM10, NO2, SO2, NH3, Pb; 8 for CO, O3
   observationWindowHours: 24;         // Standard 24-hour monitoring cycle
   validObservationCount: number;      // Total count of valid observation data points received
-  validObservationHours: number;      // Number of distinct hourly bins with valid data (temporal coverage)
+  validObservationHours: number;      // Number of distinct hourly bins with valid data in 24h cycle
   dataCoverageHours: number;          // Alias for validObservationHours
-  completenessThresholdHours: 16;     // CPCB minimum threshold: at least 16 hours data required
-  isSubIndexEligible: boolean;        // True iff validObservationHours >= 16 (non-continuous data accepted)
+  completenessThresholdHours: 16;     // CPCB statutory threshold: >= 16 hours in 24h cycle
+  isSubIndexEligible: boolean;        // True iff statutory CPCB completeness & engineering safeguards are met
+  activeWindowHours: 24 | 8;          // Active running window (8 for CO/O3, 24 for others)
+  activeWindowObservationHours: number; // Valid hourly bins within active running window
+  activeWindowThresholdHours: number; // Threshold for active window (6 for CO/O3 per 75% safeguard; 16 for 24h)
+  engineeringSafeguardSatisfied: boolean; // True if active running window satisfies completeness safeguard
   concentration: number | null;       // Averaged concentration (24-hr mean, or 8-hr running mean for CO/O3)
   unit: string;                       // Standardized unit (mg/m³ for CO, µg/m³ for others)
   subIndex: number | null;            // Piecewise linear sub-index or null if not eligible
@@ -117,11 +121,12 @@ export interface PollutantCompletenessAudit {
 }
 
 /**
- * Official CPCB Indian National AQI (Regulatory Standard)
+ * CPCB Indian National AQI (Regulatory Composite Standard)
  * Based strictly on authoritative Central Pollution Control Board (CPCB) methodology:
  * - 24-hour averaging for PM2.5, PM10, NO2, SO2, NH3, Pb
  * - 8-hour running averaging for CO and O3
  * - Minimum 16 hours of valid data required in the 24-hour cycle for sub-index eligibility (continuity not required)
+ * - 75% completeness (>= 6 of 8 hours) active-window engineering safeguard for CO/O3 running averages
  * - Minimum 3 eligible criteria pollutants including at least one particulate (PM2.5 or PM10)
  */
 export interface OfficialCpcbAqiResult {

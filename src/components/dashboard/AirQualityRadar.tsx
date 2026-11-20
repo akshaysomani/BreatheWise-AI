@@ -410,7 +410,7 @@ export function AirQualityRadar({
                   <div className="flex items-center gap-2 flex-wrap">
                     <FileCheck2 className={`w-4 h-4 ${officialCpcb?.status === 'AVAILABLE' ? 'text-[#397A55]' : 'text-[#68766C]'}`} />
                     <span className="text-xs font-bold text-[#27352D]">
-                      Official CPCB 24-Hour Regulatory AQI:
+                      CPCB National AQI:
                     </span>
                     {officialCpcb?.status === 'AVAILABLE' ? (
                       <Badge variant="success" size="sm" className="font-bold">
@@ -428,8 +428,8 @@ export function AirQualityRadar({
                 </div>
                 <p className="text-[11px] text-[#556359] leading-snug">
                   {officialCpcb?.status === 'AVAILABLE'
-                    ? 'Certified 24-hour CPCB regulatory average complying with MoEFCC 16-hour valid data completeness protocol (non-continuous data accepted).'
-                    : 'Official CPCB 24-hour regulatory AQI mandates at least 16 hours of valid data per 24-hour monitoring cycle (non-continuous observations accepted). Currently serving acute 1-hour sensor proxy.'}
+                    ? 'CPCB National AQI: Evaluated using 24-hour averages for PM2.5, PM10, NO2, SO2, NH3, Pb and 8-hour running averages for CO, O3. Meets statutory 16-hour valid data completeness and 3-parameter sufficiency (including PM).'
+                    : 'CPCB National AQI combines 24-hour averages (PM2.5, PM10, NO2, SO2, NH3, Pb) and 8-hour running averages (CO, O3). Requires at least 16 hours of valid data in the 24-hour cycle. Currently serving acute 1-hour sensor proxy for immediate exposure guidance.'}
                 </p>
               </div>
 

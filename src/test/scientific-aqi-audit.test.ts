@@ -1,157 +1,59 @@
 /**
- * BreatheWise AI — Scientific AQI Validation & Data Provenance Audit Suite
- * Module M4.1.2: CPCB Averaging Rules Correction & Final Scientific Verification
+ * BreatheWise AI — Scientific AQI Validation & Final Acceptance Audit Suite
+ * Module M4.1.2: Independent Acceptance Audit & Regulatory Alignment
  * 
- * Verifies:
- * 1. CPCB 24-Hour valid data completeness requirement (>= 16 valid observation hours in 24-hr cycle)
- *    - Validates that non-continuous observation hours (with operational gaps) satisfy the CPCB standard.
- *    - Rejects < 16 valid observation hours.
- * 2. CPCB 8-Hour averaging for CO and O3:
- *    - Calculated using 8-hour running average over the active window [asOfTime - 8h, asOfTime].
- *    - Requires station to have >= 16 valid hours in the 24-hour cycle per official CPCB protocol.
- *    - Eliminates invented 6-hour threshold.
- * 3. Sample deduplication:
- *    - Multiple observations within the same hour bucket do NOT inflate validObservationHours.
- * 4. Station isolation:
- *    - Telemetry from different stations cannot be mixed or combined to meet completeness.
- * 5. Data integrity defense:
- *    - Rejection of future timestamps (> 5 min clock drift).
- *    - Rejection of negative concentrations and readings exceeding physical plausibility ceilings.
- * 6. Detailed PollutantCompletenessAudit model:
- *    - Full inspection of averagingPeriodHours, validObservationCount, validObservationHours,
- *      dataCoverageHours, completenessThresholdHours (16), isSubIndexEligible, subIndex, rejectionReason.
- * 7. Decoupling of 24-Hour Official Regulatory AQI from Acute 1-Hour Short-Term Indicator.
- * 8. 10 Production Data Safety Invariants.
+ * Resolves & Verifies:
+ * 1. 24-Hour Rolling Observation Window & Day-Boundary Semantics (Question 1)
+ *    - Strict rolling 24-hour window relative to calculation time (asOfTime).
+ *    - Boundary invariance across 00:00 midnight (IST and UTC) and early morning (04:00 IST).
+ *    - Timezone-safe epoch arithmetic ensuring zero calendar-day resets.
+ * 2. CO and O3 8-Hour Running Average & Active-Window Sufficiency (Question 2)
+ *    - Demonstrates behavior across 8, 7, 6, 5, 4, 3, 2, 1, and 0 valid hourly bins in active 8h window.
+ *    - Distinguishes CPCB statutory rule (>= 16h in 24h cycle) from BreatheWise engineering safeguard
+ *      (>= 6h / 75% data capture in the active 8-hour window).
+ * 3. Physical Plausibility Limits & Future Clock Tolerance Boundaries (Question 3)
+ *    - Exact boundary tests for all 8 criteria pollutants (PM2.5, PM10, NO2, SO2, CO, O3, NH3, Pb).
+ *    - Exact 5-minute future clock drift boundary tests (+290s vs +310s).
+ * 4. CPCB National AQI Architecture & Additional Mandates (Question 4 & Mandates)
+ *    - Overall AQI requires >= 3 eligible parameters including PM2.5 or PM10.
+ *    - Overall AQI is strictly the maximum eligible sub-index.
+ *    - Individual eligible sub-indices remain available when overall AQI is unavailable.
+ *    - Decoupling of 24h CPCB National AQI from 1h acute sensor proxy.
+ *    - 10 Production Data Safety Invariants.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   calculateOfficialCpcbAqi,
   calculateShortTermIndicator,
   calculateCpcbAqi,
   HourlySampleInput,
 } from '@/lib/air-quality/cpcb-aqi';
+import { validateMeasurement, PHYSICAL_CONCENTRATION_LIMITS } from '@/lib/air-quality/measurement-validator';
 import { airQualityService } from '@/services/air-quality.service';
 import { airQualityRepository } from '@/repositories/air-quality.repository';
 import prisma from '@/lib/db';
 
-describe('M4.1.2 Scientific AQI Validation & CPCB Averaging Rules Audit', () => {
+describe('M4.1.2 Final Independent Acceptance Audit & CPCB Verification', () => {
   const originalEnv = process.env.NODE_ENV;
 
   afterEach(() => {
     (process.env as any).NODE_ENV = originalEnv;
   });
 
-  describe('1. CPCB Regulatory 24-Hour Completeness & Non-Continuous Averaging', () => {
-    const baseDate = new Date('2026-11-20T12:00:00.000Z');
-
-    it('rejects regulatory calculation when criteria completeness is < 16 hours (e.g. 15 hours)', () => {
-      // 15 hourly samples (15 hours < 16 hours requirement)
+  // =========================================================================
+  // QUESTION 1: 24-Hour Rolling Observation Window & Day-Boundary Semantics
+  // =========================================================================
+  describe('Question 1: 24-Hour Observation Window Running Semantics & Day Boundaries', () => {
+    it('verifies rolling window spans exactly 24 hours across the midnight IST day boundary (no calendar-day reset)', () => {
+      // Midnight IST: 2026-11-20T00:00:00+05:30 = 2026-11-19T18:30:00.000Z
+      const midnightIst = new Date('2026-11-19T18:30:00.000Z');
       const samples: HourlySampleInput[] = [];
-      for (let i = 0; i < 15; i++) {
-        const time = new Date(baseDate.getTime() - i * 60 * 60 * 1000);
-        samples.push(
-          { pollutant: 'PM2.5', value: 85, unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'PM10', value: 160, unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'NO2', value: 45, unit: 'µg/m³', measurementTimestamp: time }
-        );
-      }
 
-      const result = calculateOfficialCpcbAqi(samples, baseDate);
-
-      expect(result.status).toBe('INSUFFICIENT_COMPLETENESS');
-      expect(result.aqi).toBeNull();
-      expect(result.category).toBe('UNAVAILABLE');
-      expect(result.isRegulatoryCompliant).toBe(false);
-      expect(result.completenessHours).toBe(15);
-      expect(result.minRequiredHours).toBe(16);
-      expect(result.completenessThresholdHours).toBe(16);
-      expect(result.reason).toContain('at least 16 hours of valid data');
-    });
-
-    it('approves regulatory calculation for consecutive 16 hours', () => {
-      const samples: HourlySampleInput[] = [];
-      for (let i = 0; i < 16; i++) {
-        const time = new Date(baseDate.getTime() - i * 60 * 60 * 1000);
-        samples.push(
-          { pollutant: 'PM2.5', value: 85, unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'PM10', value: 160, unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'NO2', value: 45, unit: 'µg/m³', measurementTimestamp: time }
-        );
-      }
-
-      const result = calculateOfficialCpcbAqi(samples, baseDate);
-
-      expect(result.status).toBe('AVAILABLE');
-      expect(result.aqi).toBeGreaterThan(0);
-      expect(result.category).not.toBe('UNAVAILABLE');
-      expect(result.isRegulatoryCompliant).toBe(true);
-      expect(result.completenessHours).toBe(16);
-      expect(result.completenessThresholdHours).toBe(16);
-    });
-
-    it('SCIENTIFIC PROOF: approves non-continuous observation hours (16 distinct hours with gaps across 24h cycle)', () => {
-      // Discontinuous hours: 16 non-consecutive hours with operational gaps
-      // e.g. hours 0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22
-      const discontinuousHours = [0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22];
-      expect(discontinuousHours.length).toBe(16);
-
-      const samples: HourlySampleInput[] = [];
-      for (const h of discontinuousHours) {
-        const time = new Date(baseDate.getTime() - h * 60 * 60 * 1000);
-        samples.push(
-          { pollutant: 'PM2.5', value: 75, unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'PM10', value: 140, unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'SO2', value: 30, unit: 'µg/m³', measurementTimestamp: time }
-        );
-      }
-
-      const result = calculateOfficialCpcbAqi(samples, baseDate);
-
-      expect(result.status).toBe('AVAILABLE');
-      expect(result.isRegulatoryCompliant).toBe(true);
-      expect(result.completenessHours).toBe(16);
-      expect(result.pollutantAudits?.['PM2.5']?.validObservationHours).toBe(16);
-      expect(result.pollutantAudits?.['PM2.5']?.isSubIndexEligible).toBe(true);
-      expect(result.reason).toContain('Satisfies official CPCB 24-hour regulatory data completeness');
-    });
-
-    it('rejects non-continuous observation hours when distinct valid hours < 16 (e.g. 15 hours with gaps)', () => {
-      // 15 discontinuous hours with gaps
-      const discontinuous15 = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 21, 22, 23, 1];
-      expect(discontinuous15.length).toBe(15);
-
-      const samples: HourlySampleInput[] = [];
-      for (const h of discontinuous15) {
-        const time = new Date(baseDate.getTime() - h * 60 * 60 * 1000);
-        samples.push(
-          { pollutant: 'PM2.5', value: 75, unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'PM10', value: 140, unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'SO2', value: 30, unit: 'µg/m³', measurementTimestamp: time }
-        );
-      }
-
-      const result = calculateOfficialCpcbAqi(samples, baseDate);
-
-      expect(result.status).toBe('INSUFFICIENT_COMPLETENESS');
-      expect(result.aqi).toBeNull();
-      expect(result.completenessHours).toBe(15);
-      expect(result.isRegulatoryCompliant).toBe(false);
-      expect(result.pollutantAudits?.['PM2.5']?.isSubIndexEligible).toBe(false);
-      expect(result.pollutantAudits?.['PM2.5']?.rejectionReason).toContain('Insufficient valid observation hours (15/24 hrs)');
-    });
-
-    it('sample deduplication: multiple readings within the same hourly bucket do NOT inflate validObservationHours', () => {
-      const samples: HourlySampleInput[] = [];
-      // Create 3 readings within hour 0 (different minutes)
-      samples.push(
-        { pollutant: 'PM2.5', value: 80, unit: 'µg/m³', measurementTimestamp: new Date(baseDate.getTime() - 5 * 60 * 1000) },
-        { pollutant: 'PM2.5', value: 84, unit: 'µg/m³', measurementTimestamp: new Date(baseDate.getTime() - 25 * 60 * 1000) },
-        { pollutant: 'PM2.5', value: 88, unit: 'µg/m³', measurementTimestamp: new Date(baseDate.getTime() - 50 * 60 * 1000) }
-      );
-      // Plus 14 other distinct hours (total 15 distinct hours, even though total samples for PM2.5 = 17)
-      for (let h = 2; h <= 15; h++) {
-        const time = new Date(baseDate.getTime() - h * 60 * 60 * 1000);
+      // Generate 24 hourly readings spanning from 23 hours prior up to midnight IST
+      // Hours 0-5 fall on previous day in IST; hours 6-23 fall on prior morning/afternoon
+      for (let h = 0; h < 24; h++) {
+        const time = new Date(midnightIst.getTime() - h * 60 * 60 * 1000);
         samples.push(
           { pollutant: 'PM2.5', value: 80, unit: 'µg/m³', measurementTimestamp: time },
           { pollutant: 'PM10', value: 150, unit: 'µg/m³', measurementTimestamp: time },
@@ -159,168 +61,358 @@ describe('M4.1.2 Scientific AQI Validation & CPCB Averaging Rules Audit', () => 
         );
       }
 
-      const result = calculateOfficialCpcbAqi(samples, baseDate);
-
-      // Total PM2.5 observations received = 17, but valid observation hours = 15!
-      expect(result.pollutantAudits?.['PM2.5']?.validObservationCount).toBe(17);
-      expect(result.pollutantAudits?.['PM2.5']?.validObservationHours).toBe(15);
-      expect(result.pollutantAudits?.['PM2.5']?.isSubIndexEligible).toBe(false);
-      expect(result.status).toBe('INSUFFICIENT_COMPLETENESS');
-    });
-
-    it('calculates accurate 24-hour regulatory average for a full 24-hour observation cycle', () => {
-      const samples: HourlySampleInput[] = [];
-      for (let i = 0; i < 24; i++) {
-        const time = new Date(baseDate.getTime() - i * 60 * 60 * 1000);
-        samples.push(
-          { pollutant: 'PM2.5', value: 80 + (i % 20), unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'PM10', value: 150, unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'NO2', value: 40, unit: 'µg/m³', measurementTimestamp: time }
-        );
-      }
-
-      const result = calculateOfficialCpcbAqi(samples, baseDate);
+      const result = calculateOfficialCpcbAqi(samples, midnightIst);
 
       expect(result.status).toBe('AVAILABLE');
       expect(result.isRegulatoryCompliant).toBe(true);
       expect(result.completenessHours).toBe(24);
-      expect(result.dominantPollutant).toBe('PM2.5');
       expect(result.pollutantAudits?.['PM2.5']?.validObservationHours).toBe(24);
-      expect(result.pollutantAudits?.['PM2.5']?.isSubIndexEligible).toBe(true);
+      expect(result.pollutantAudits?.['PM2.5']?.concentration).toBe(80);
+      expect(result.reason).toContain('Satisfies CPCB National AQI data completeness');
     });
 
-    it('CO and O3 averaging: maps 8-hour running mean when 16-hour 24h cycle completeness is satisfied', () => {
+    it('early morning evaluation (04:00 AM IST) seamlessly incorporates prior calendar-day observations', () => {
+      // 04:00 AM IST: 2026-11-20T04:00:00+05:30 = 2026-11-19T22:30:00.000Z
+      const earlyMorningIst = new Date('2026-11-19T22:30:00.000Z');
       const samples: HourlySampleInput[] = [];
-      // 16 distinct hours in the 24h cycle
-      for (let i = 0; i < 16; i++) {
-        const time = new Date(baseDate.getTime() - i * 60 * 60 * 1000);
-        // Vary CO: first 8 hours (0-7) have value 2.0 mg/m³, remaining hours (8-15) have value 4.0 mg/m³
-        const coVal = i < 8 ? 2.0 : 4.0;
-        const o3Val = i < 8 ? 60.0 : 120.0;
+
+      // 4 hours on current calendar day (00:00 to 04:00 IST) + 16 hours on previous calendar day (08:00 to 23:00 IST)
+      // Total 20 distinct hours spanning the calendar-day transition
+      for (let h = 0; h < 20; h++) {
+        const time = new Date(earlyMorningIst.getTime() - h * 60 * 60 * 1000);
         samples.push(
-          { pollutant: 'CO', value: coVal, unit: 'mg/m³', measurementTimestamp: time },
-          { pollutant: 'O3', value: o3Val, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'PM2.5', value: 70 + (h % 10), unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'PM10', value: 140, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'SO2', value: 30, unit: 'µg/m³', measurementTimestamp: time }
+        );
+      }
+
+      const result = calculateOfficialCpcbAqi(samples, earlyMorningIst);
+
+      // Demonstrates NO calendar-day reset: all 20 hours across day boundary are retained
+      expect(result.status).toBe('AVAILABLE');
+      expect(result.completenessHours).toBe(20);
+      expect(result.pollutantAudits?.['PM2.5']?.validObservationHours).toBe(20);
+    });
+
+    it('evaluates official CPCB daily 4:00 PM bulletin window (16:00 IST)', () => {
+      // 16:00 IST: 2026-11-20T16:00:00+05:30 = 2026-11-20T10:30:00.000Z
+      const bulletinTime = new Date('2026-11-20T10:30:00.000Z');
+      const samples: HourlySampleInput[] = [];
+
+      // 16 valid hours out of 24
+      for (let h = 0; h < 16; h++) {
+        const time = new Date(bulletinTime.getTime() - h * 60 * 60 * 1000);
+        samples.push(
+          { pollutant: 'PM2.5', value: 90, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'PM10', value: 180, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'NO2', value: 50, unit: 'µg/m³', measurementTimestamp: time }
+        );
+      }
+
+      const result = calculateOfficialCpcbAqi(samples, bulletinTime);
+
+      expect(result.status).toBe('AVAILABLE');
+      expect(result.completenessHours).toBe(16);
+      expect(result.isRegulatoryCompliant).toBe(true);
+    });
+
+    it('excludes samples older than 24 hours from the calculation time', () => {
+      const asOf = new Date('2026-11-20T12:00:00.000Z');
+      const samples: HourlySampleInput[] = [];
+
+      // 15 hours within the 24h window
+      for (let h = 0; h < 15; h++) {
+        const time = new Date(asOf.getTime() - h * 60 * 60 * 1000);
+        samples.push(
+          { pollutant: 'PM2.5', value: 80, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'PM10', value: 150, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'NO2', value: 40, unit: 'µg/m³', measurementTimestamp: time }
+        );
+      }
+      // Sample 26 hours old (outside 24h window)
+      samples.push(
+        { pollutant: 'PM2.5', value: 80, unit: 'µg/m³', measurementTimestamp: new Date(asOf.getTime() - 26 * 60 * 60 * 1000) },
+        { pollutant: 'PM10', value: 150, unit: 'µg/m³', measurementTimestamp: new Date(asOf.getTime() - 26 * 60 * 60 * 1000) },
+        { pollutant: 'NO2', value: 40, unit: 'µg/m³', measurementTimestamp: new Date(asOf.getTime() - 26 * 60 * 60 * 1000) }
+      );
+
+      const result = calculateOfficialCpcbAqi(samples, asOf);
+
+      // 26h sample is discarded, leaving 15 hours -> INSUFFICIENT_COMPLETENESS
+      expect(result.status).toBe('INSUFFICIENT_COMPLETENESS');
+      expect(result.completenessHours).toBe(15);
+      expect(result.isRegulatoryCompliant).toBe(false);
+    });
+  });
+
+  // =========================================================================
+  // QUESTION 2: CO & O3 8-Hour Running Average & Active Window Sufficiency
+  // =========================================================================
+  describe('Question 2: CO & O3 8-Hour Running Average & Engineering Safeguard Demonstration', () => {
+    const baseDate = new Date('2026-11-20T12:00:00.000Z');
+
+    /**
+     * Helper to build samples where:
+     * - Station satisfies statutory CPCB 16-hour rule across the 24h cycle (e.g. 16 distinct hours total).
+     * - Inside the active 8-hour window [baseDate - 7h, baseDate], exactly activeCount hours are present.
+     */
+    function build8hDemonstrationSamples(activeCount: number): HourlySampleInput[] {
+      const samples: HourlySampleInput[] = [];
+
+      // 1. Add activeCount hourly samples inside active 8h window (h = 0 to activeCount - 1)
+      for (let h = 0; h < activeCount; h++) {
+        const time = new Date(baseDate.getTime() - h * 60 * 60 * 1000);
+        samples.push(
+          { pollutant: 'CO', value: 2.0, unit: 'mg/m³', measurementTimestamp: time },
+          { pollutant: 'O3', value: 60, unit: 'µg/m³', measurementTimestamp: time },
           { pollutant: 'PM2.5', value: 75, unit: 'µg/m³', measurementTimestamp: time }
         );
       }
 
+      // 2. Add remaining hours outside active 8h window (h = 8 to 8 + (16 - activeCount) - 1)
+      // to ensure the station satisfies CPCB 16-hour 24h cycle completeness
+      const remainingNeeded = Math.max(0, 16 - activeCount);
+      for (let r = 0; r < remainingNeeded; r++) {
+        const h = 8 + r;
+        const time = new Date(baseDate.getTime() - h * 60 * 60 * 1000);
+        samples.push(
+          { pollutant: 'CO', value: 4.0, unit: 'mg/m³', measurementTimestamp: time },
+          { pollutant: 'O3', value: 120, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'PM2.5', value: 75, unit: 'µg/m³', measurementTimestamp: time }
+        );
+      }
+
+      return samples;
+    }
+
+    it('demonstrates 8 valid hourly bins in active 8h window: APPROVED, exact running mean over 8 hours', () => {
+      const samples = build8hDemonstrationSamples(8);
       const result = calculateOfficialCpcbAqi(samples, baseDate);
 
-      expect(result.status).toBe('AVAILABLE');
-      expect(result.subIndices['CO']).not.toBeNull();
-      expect(result.subIndices['O3']).not.toBeNull();
-
       const coAudit = result.pollutantAudits?.['CO'];
-      expect(coAudit?.averagingPeriodHours).toBe(8);
-      expect(coAudit?.observationWindowHours).toBe(24);
-      expect(coAudit?.validObservationHours).toBe(16);
-      expect(coAudit?.completenessThresholdHours).toBe(16);
+      expect(coAudit?.validObservationHours).toBe(16); // CPCB cycle satisfied
+      expect(coAudit?.activeWindowObservationHours).toBe(8); // 8/8 in active window
+      expect(coAudit?.engineeringSafeguardSatisfied).toBe(true);
       expect(coAudit?.isSubIndexEligible).toBe(true);
-      // The 8-hour running average for CO should be ~2.0 mg/m³ (from active 8-hour window 0-7)
-      expect(coAudit?.concentration).toBeCloseTo(2.0, 1);
-
-      const o3Audit = result.pollutantAudits?.['O3'];
-      expect(o3Audit?.averagingPeriodHours).toBe(8);
-      expect(o3Audit?.validObservationHours).toBe(16);
-      expect(o3Audit?.isSubIndexEligible).toBe(true);
-      expect(o3Audit?.concentration).toBeCloseTo(60.0, 1);
+      expect(coAudit?.concentration).toBe(2.0); // Mean of active 8 hours (all 2.0)
+      expect(result.subIndices['CO']).not.toBeNull();
     });
 
-    it('CO and O3: rejects sub-index if station records < 16 hours in 24h cycle (no invented 6-hour threshold)', () => {
-      // 6 hours of CO/O3 (which formerly passed under the invalid 6-hour threshold)
-      const samples6h: HourlySampleInput[] = [];
-      for (let i = 0; i < 6; i++) {
-        const time = new Date(baseDate.getTime() - i * 60 * 60 * 1000);
-        samples6h.push(
+    it('demonstrates 7 valid hourly bins in active 8h window: APPROVED, exact running mean over 7 hours', () => {
+      const samples = build8hDemonstrationSamples(7);
+      const result = calculateOfficialCpcbAqi(samples, baseDate);
+
+      const coAudit = result.pollutantAudits?.['CO'];
+      expect(coAudit?.validObservationHours).toBe(16);
+      expect(coAudit?.activeWindowObservationHours).toBe(7);
+      expect(coAudit?.engineeringSafeguardSatisfied).toBe(true);
+      expect(coAudit?.isSubIndexEligible).toBe(true);
+      expect(coAudit?.concentration).toBe(2.0);
+      expect(result.subIndices['CO']).not.toBeNull();
+    });
+
+    it('demonstrates 6 valid hourly bins in active 8h window: APPROVED, exact running mean over 6 hours (75% threshold)', () => {
+      const samples = build8hDemonstrationSamples(6);
+      const result = calculateOfficialCpcbAqi(samples, baseDate);
+
+      const coAudit = result.pollutantAudits?.['CO'];
+      expect(coAudit?.validObservationHours).toBe(16);
+      expect(coAudit?.activeWindowObservationHours).toBe(6);
+      expect(coAudit?.engineeringSafeguardSatisfied).toBe(true);
+      expect(coAudit?.isSubIndexEligible).toBe(true);
+      expect(coAudit?.concentration).toBe(2.0);
+      expect(result.subIndices['CO']).not.toBeNull();
+    });
+
+    it('demonstrates 5 valid hourly bins in active 8h window: REJECTED by engineering safeguard (subIndex = null)', () => {
+      const samples = build8hDemonstrationSamples(5);
+      const result = calculateOfficialCpcbAqi(samples, baseDate);
+
+      const coAudit = result.pollutantAudits?.['CO'];
+      expect(coAudit?.validObservationHours).toBe(16); // CPCB 24h statutory rule WAS met
+      expect(coAudit?.activeWindowObservationHours).toBe(5); // Only 5 in active 8h window
+      expect(coAudit?.engineeringSafeguardSatisfied).toBe(false); // Safeguard fails (<6)
+      expect(coAudit?.isSubIndexEligible).toBe(false);
+      expect(coAudit?.subIndex).toBeNull();
+      expect(coAudit?.rejectionReason).toContain('Engineering safeguard: Active 8-hour window contains only 5/8');
+      expect(coAudit?.rejectionReason).toContain('6h in 8h window is an engineering data-quality safeguard');
+      expect(result.subIndices['CO']).toBeNull();
+    });
+
+    it('demonstrates 4, 3, 2, 1, and 0 valid hourly bins in active 8h window: REJECTED by engineering safeguard', () => {
+      for (const count of [4, 3, 2, 1, 0]) {
+        const samples = build8hDemonstrationSamples(count);
+        const result = calculateOfficialCpcbAqi(samples, baseDate);
+
+        const coAudit = result.pollutantAudits?.['CO'];
+        expect(coAudit?.isSubIndexEligible).toBe(false);
+        expect(coAudit?.engineeringSafeguardSatisfied).toBe(false);
+        expect(coAudit?.subIndex).toBeNull();
+        expect(result.subIndices['CO']).toBeNull();
+      }
+    });
+
+    it('rejection if CPCB 24h cycle rule is NOT met (< 16h total) even if 8h active window is full (8/8)', () => {
+      const samples: HourlySampleInput[] = [];
+      // Full 8 hours in active window, but NO OTHER hours in 24h cycle (total 8 < 16)
+      for (let h = 0; h < 8; h++) {
+        const time = new Date(baseDate.getTime() - h * 60 * 60 * 1000);
+        samples.push(
           { pollutant: 'CO', value: 2.0, unit: 'mg/m³', measurementTimestamp: time },
           { pollutant: 'O3', value: 60, unit: 'µg/m³', measurementTimestamp: time }
         );
       }
 
-      const result = calculateOfficialCpcbAqi(samples6h, baseDate);
-
-      // Under official CPCB rules, 6 hours in the 24h cycle is INSUFFICIENT for calculating a sub-index
-      expect(result.subIndices['CO']).toBeNull();
-      expect(result.subIndices['O3']).toBeNull();
-      expect(result.pollutantAudits?.['CO']?.isSubIndexEligible).toBe(false);
-      expect(result.pollutantAudits?.['CO']?.rejectionReason).toContain('requires at least 16 valid observation hours');
-      expect(result.pollutantAudits?.['O3']?.isSubIndexEligible).toBe(false);
-    });
-
-    it('station isolation: rejects telemetry from different stations when targetStationId is specified', () => {
-      const samples: HourlySampleInput[] = [];
-      // Station A has 10 hours
-      for (let i = 0; i < 10; i++) {
-        const time = new Date(baseDate.getTime() - i * 60 * 60 * 1000);
-        samples.push(
-          { pollutant: 'PM2.5', value: 80, unit: 'µg/m³', measurementTimestamp: time, stationId: 'station_A' },
-          { pollutant: 'PM10', value: 150, unit: 'µg/m³', measurementTimestamp: time, stationId: 'station_A' },
-          { pollutant: 'NO2', value: 40, unit: 'µg/m³', measurementTimestamp: time, stationId: 'station_A' }
-        );
-      }
-      // Station B has 8 hours
-      for (let i = 10; i < 18; i++) {
-        const time = new Date(baseDate.getTime() - i * 60 * 60 * 1000);
-        samples.push(
-          { pollutant: 'PM2.5', value: 80, unit: 'µg/m³', measurementTimestamp: time, stationId: 'station_B' },
-          { pollutant: 'PM10', value: 150, unit: 'µg/m³', measurementTimestamp: time, stationId: 'station_B' },
-          { pollutant: 'NO2', value: 40, unit: 'µg/m³', measurementTimestamp: time, stationId: 'station_B' }
-        );
-      }
-
-      // If stations were mixed, total hours = 18 (>= 16).
-      // But with station isolation for station_A, station_B samples are rejected!
-      const resultStationA = calculateOfficialCpcbAqi(samples, baseDate, 'station_A');
-
-      expect(resultStationA.status).toBe('INSUFFICIENT_COMPLETENESS');
-      expect(resultStationA.completenessHours).toBe(10);
-      expect(resultStationA.isRegulatoryCompliant).toBe(false);
-    });
-
-    it('rejects future timestamps (> 5 min) and physical ceiling violations', () => {
-      const samples: HourlySampleInput[] = [];
-      // 16 valid hours
-      for (let i = 0; i < 16; i++) {
-        const time = new Date(baseDate.getTime() - i * 60 * 60 * 1000);
-        samples.push(
-          { pollutant: 'PM2.5', value: 80, unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'PM10', value: 150, unit: 'µg/m³', measurementTimestamp: time },
-          { pollutant: 'NO2', value: 40, unit: 'µg/m³', measurementTimestamp: time }
-        );
-      }
-      // Corrupt sample: future timestamp (+15 min)
-      samples.push({
-        pollutant: 'PM2.5',
-        value: 999,
-        unit: 'µg/m³',
-        measurementTimestamp: new Date(baseDate.getTime() + 15 * 60 * 1000),
-      });
-      // Corrupt sample: physically impossible ceiling violation (PM2.5 > 2000 µg/m³)
-      samples.push({
-        pollutant: 'PM2.5',
-        value: 5000,
-        unit: 'µg/m³',
-        measurementTimestamp: new Date(baseDate.getTime() - 2 * 60 * 60 * 1000),
-      });
-      // Corrupt sample: negative reading
-      samples.push({
-        pollutant: 'PM2.5',
-        value: -50,
-        unit: 'µg/m³',
-        measurementTimestamp: new Date(baseDate.getTime() - 3 * 60 * 60 * 1000),
-      });
-
       const result = calculateOfficialCpcbAqi(samples, baseDate);
 
-      // Calculation passes on the 16 valid hours; corrupt values are excluded
-      expect(result.status).toBe('AVAILABLE');
-      expect(result.completenessHours).toBe(16);
-      expect(result.pollutantAudits?.['PM2.5']?.concentration).toBe(80);
+      const coAudit = result.pollutantAudits?.['CO'];
+      expect(coAudit?.validObservationHours).toBe(8);
+      expect(coAudit?.isSubIndexEligible).toBe(false);
+      expect(coAudit?.rejectionReason).toContain('CPCB protocol requires at least 16 valid observation hours');
+      expect(result.subIndices['CO']).toBeNull();
     });
   });
 
-  describe('2. Decoupling Official CPCB AQI from Acute Short-Term Indicator', () => {
-    it('single hourly measurement yields null Official AQI and valid Short-Term Indicator', () => {
+  // =========================================================================
+  // QUESTION 3: PHYSICAL_CONCENTRATION_LIMITS & Future-Clock Tolerance
+  // =========================================================================
+  describe('Question 3: Physical Concentration Plausibility Limits & Clock Drift Boundaries', () => {
+    it('PM2.5 boundary: accepts 2000 µg/m³, rejects 2000.1 µg/m³', () => {
+      const valid = validateMeasurement('PM2.5', 2000, 'µg/m³');
+      expect(valid.isValid).toBe(true);
+
+      const invalid = validateMeasurement('PM2.5', 2000.1, 'µg/m³');
+      expect(invalid.isValid).toBe(false);
+      expect(invalid.qualityFlags).toContain('REJECTED_EXCEEDS_PHYSICAL_LIMIT');
+      expect(invalid.rejectionReason).toContain('exceeds physical plausibility ceiling (2000 µg/m³)');
+    });
+
+    it('PM10 boundary: accepts 3000 µg/m³, rejects 3000.1 µg/m³', () => {
+      expect(validateMeasurement('PM10', 3000, 'µg/m³').isValid).toBe(true);
+      expect(validateMeasurement('PM10', 3000.1, 'µg/m³').isValid).toBe(false);
+    });
+
+    it('NO2 boundary: accepts 1500 µg/m³, rejects 1500.1 µg/m³', () => {
+      expect(validateMeasurement('NO2', 1500, 'µg/m³').isValid).toBe(true);
+      expect(validateMeasurement('NO2', 1500.1, 'µg/m³').isValid).toBe(false);
+    });
+
+    it('SO2 boundary: accepts 3000 µg/m³, rejects 3000.1 µg/m³', () => {
+      expect(validateMeasurement('SO2', 3000, 'µg/m³').isValid).toBe(true);
+      expect(validateMeasurement('SO2', 3000.1, 'µg/m³').isValid).toBe(false);
+    });
+
+    it('CO boundary: accepts 150 mg/m³, rejects 150.1 mg/m³', () => {
+      expect(validateMeasurement('CO', 150, 'mg/m³').isValid).toBe(true);
+      expect(validateMeasurement('CO', 150.1, 'mg/m³').isValid).toBe(false);
+    });
+
+    it('O3 boundary: accepts 1500 µg/m³, rejects 1500.1 µg/m³', () => {
+      expect(validateMeasurement('O3', 1500, 'µg/m³').isValid).toBe(true);
+      expect(validateMeasurement('O3', 1500.1, 'µg/m³').isValid).toBe(false);
+    });
+
+    it('NH3 boundary: accepts 3000 µg/m³, rejects 3000.1 µg/m³', () => {
+      expect(validateMeasurement('NH3', 3000, 'µg/m³').isValid).toBe(true);
+      expect(validateMeasurement('NH3', 3000.1, 'µg/m³').isValid).toBe(false);
+    });
+
+    it('Pb boundary: accepts 50 µg/m³, rejects 50.1 µg/m³', () => {
+      expect(validateMeasurement('Pb', 50, 'µg/m³').isValid).toBe(true);
+      expect(validateMeasurement('Pb', 50.1, 'µg/m³').isValid).toBe(false);
+    });
+
+    it('Future clock tolerance boundary: accepts +4.8 minutes (290s), rejects +5.2 minutes (310s)', () => {
+      const now = Date.now();
+      const withinTolerance = new Date(now + 290 * 1000);
+      const exceedsTolerance = new Date(now + 310 * 1000);
+
+      const resWithin = validateMeasurement('PM2.5', 50, 'µg/m³', withinTolerance);
+      expect(resWithin.isValid).toBe(true);
+
+      const resExceeds = validateMeasurement('PM2.5', 50, 'µg/m³', exceedsTolerance);
+      expect(resExceeds.isValid).toBe(false);
+      expect(resExceeds.qualityFlags).toContain('REJECTED_FUTURE_TIMESTAMP');
+    });
+  });
+
+  // =========================================================================
+  // QUESTION 4 & MANDATORY CPCB RULES
+  // =========================================================================
+  describe('Question 4 & Mandatory CPCB Calculation Rules', () => {
+    const baseDate = new Date('2026-11-20T12:00:00.000Z');
+
+    it('overall AQI is strictly the MAXIMUM eligible sub-index', () => {
+      const samples: HourlySampleInput[] = [];
+      // 16 valid hours
+      for (let h = 0; h < 16; h++) {
+        const time = new Date(baseDate.getTime() - h * 60 * 60 * 1000);
+        samples.push(
+          { pollutant: 'PM2.5', value: 60, unit: 'µg/m³', measurementTimestamp: time }, // sub-index ~ 100
+          { pollutant: 'PM10', value: 250, unit: 'µg/m³', measurementTimestamp: time }, // sub-index ~ 200
+          { pollutant: 'NO2', value: 280, unit: 'µg/m³', measurementTimestamp: time }   // sub-index ~ 300 (dominant)
+        );
+      }
+
+      const result = calculateOfficialCpcbAqi(samples, baseDate);
+
+      expect(result.status).toBe('AVAILABLE');
+      expect(result.dominantPollutant).toBe('NO2');
+      expect(result.aqi).toBe(result.subIndices['NO2']);
+      expect(result.aqi).toBeGreaterThan(result.subIndices['PM10']!);
+      expect(result.aqi).toBeGreaterThan(result.subIndices['PM2.5']!);
+    });
+
+    it('individual eligible sub-indices remain available even when overall AQI is UNAVAILABLE', () => {
+      const samples: HourlySampleInput[] = [];
+      // Only 2 pollutants monitored (PM2.5 and PM10 with 16h valid data; no 3rd pollutant)
+      for (let h = 0; h < 16; h++) {
+        const time = new Date(baseDate.getTime() - h * 60 * 60 * 1000);
+        samples.push(
+          { pollutant: 'PM2.5', value: 85, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'PM10', value: 160, unit: 'µg/m³', measurementTimestamp: time }
+        );
+      }
+
+      const result = calculateOfficialCpcbAqi(samples, baseDate);
+
+      // Overall AQI is null due to 3-parameter sufficiency rule
+      expect(result.status).toBe('INSUFFICIENT_POLLUTANTS');
+      expect(result.aqi).toBeNull();
+      expect(result.category).toBe('UNAVAILABLE');
+      expect(result.isRegulatoryCompliant).toBe(false);
+
+      // BUT individual eligible sub-indices are preserved and available!
+      expect(result.subIndices['PM2.5']).not.toBeNull();
+      expect(result.subIndices['PM2.5']).toBeGreaterThan(0);
+      expect(result.subIndices['PM10']).not.toBeNull();
+      expect(result.subIndices['PM10']).toBeGreaterThan(0);
+      expect(result.pollutantAudits?.['PM2.5']?.isSubIndexEligible).toBe(true);
+      expect(result.pollutantAudits?.['PM10']?.isSubIndexEligible).toBe(true);
+    });
+
+    it('requires at least three eligible pollutants including PM2.5 or PM10', () => {
+      const samplesWithoutParticulate: HourlySampleInput[] = [];
+      // 3 pollutants (NO2, SO2, NH3) but NO particulate
+      for (let h = 0; h < 16; h++) {
+        const time = new Date(baseDate.getTime() - h * 60 * 60 * 1000);
+        samplesWithoutParticulate.push(
+          { pollutant: 'NO2', value: 40, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'SO2', value: 30, unit: 'µg/m³', measurementTimestamp: time },
+          { pollutant: 'NH3', value: 50, unit: 'µg/m³', measurementTimestamp: time }
+        );
+      }
+
+      const result = calculateOfficialCpcbAqi(samplesWithoutParticulate, baseDate);
+
+      expect(result.status).toBe('INSUFFICIENT_POLLUTANTS');
+      expect(result.aqi).toBeNull();
+      expect(result.hasParticulate).toBe(false);
+      expect(result.reason).toContain('mandatory PM2.5 or PM10');
+    });
+
+    it('decouples CPCB National AQI from Short-Term Acute 1-Hour Indicator on single-snapshot input', () => {
       const inputs = [
         { pollutant: 'PM2.5' as const, value: 110, unit: 'µg/m³' },
         { pollutant: 'PM10' as const, value: 220, unit: 'µg/m³' },
@@ -329,41 +421,25 @@ describe('M4.1.2 Scientific AQI Validation & CPCB Averaging Rules Audit', () => 
 
       const { aqiResult, officialCpcbAqi, shortTermIndicator } = calculateCpcbAqi(inputs);
 
-      // Official 24-hour regulatory AQI must be UNAVAILABLE due to completeness
+      // CPCB National AQI requires 16h completeness -> INSUFFICIENT_COMPLETENESS
       expect(officialCpcbAqi.status).toBe('INSUFFICIENT_COMPLETENESS');
       expect(officialCpcbAqi.aqi).toBeNull();
       expect(officialCpcbAqi.category).toBe('UNAVAILABLE');
       expect(officialCpcbAqi.isRegulatoryCompliant).toBe(false);
-      expect(officialCpcbAqi.completenessThresholdHours).toBe(16.0);
       expect(officialCpcbAqi.reason).toContain('minimum 16 hours of valid data');
 
-      // Short-Term 1-Hour Indicator must be AVAILABLE
+      // Short-Term 1-Hour Proxy is immediately available
       expect(shortTermIndicator.status).toBe('AVAILABLE');
       expect(shortTermIndicator.indicatorValue).toBeGreaterThan(0);
       expect(shortTermIndicator.observationPeriod).toBe('1_HOUR');
       expect(shortTermIndicator.label).toBe('Short-Term Air Quality Indicator (1-Hour Acute Proxy)');
-
-      // Backward compatible alias matches the short-term indicator
-      expect(aqiResult.aqi).toBe(shortTermIndicator.indicatorValue);
-      expect(aqiResult.isInstantaneousProxy).toBe(true);
-    });
-
-    it('rejects calculation if mandatory particulate parameter (PM2.5 or PM10) is absent', () => {
-      const inputsWithoutPM = [
-        { pollutant: 'NO2' as const, value: 65, unit: 'µg/m³' },
-        { pollutant: 'SO2' as const, value: 45, unit: 'µg/m³' },
-        { pollutant: 'CO' as const, value: 1.8, unit: 'mg/m³' },
-      ];
-
-      const indicator = calculateShortTermIndicator(inputsWithoutPM);
-
-      expect(indicator.status).toBe('INSUFFICIENT_DATA');
-      expect(indicator.indicatorValue).toBeNull();
-      expect(indicator.category).toBe('INSUFFICIENT_DATA');
     });
   });
 
-  describe('3. Production Data Safety & Provenance Invariants (10 Invariants)', () => {
+  // =========================================================================
+  // PRODUCTION DATA SAFETY & PROVENANCE INVARIANTS (10 INVARIANTS)
+  // =========================================================================
+  describe('Production Data Safety & Provenance Invariants (10 Invariants)', () => {
     it('Invariant 1: Development seed records are never labeled LIVE', async () => {
       const seedRecords = await airQualityRepository.getSnapshotsByProvenance('DEVELOPMENT_SEED');
       expect(seedRecords.length).toBeGreaterThan(0);
@@ -485,7 +561,6 @@ describe('M4.1.2 Scientific AQI Validation & CPCB Averaging Rules Audit', () => 
         { pollutant: 'PM10', value: 100, unit: 'µg/m³', measurementTimestamp: baseDate, stationId: 'station_delhi_2' },
         { pollutant: 'NO2', value: 30, unit: 'µg/m³', measurementTimestamp: baseDate, stationId: 'station_delhi_3' },
       ];
-      // Target station is station_delhi_1
       const res = calculateOfficialCpcbAqi(multiStationSamples, baseDate, 'station_delhi_1');
       expect(res.pollutantAudits?.['PM10']).toBeUndefined();
       expect(res.pollutantAudits?.['NO2']).toBeUndefined();

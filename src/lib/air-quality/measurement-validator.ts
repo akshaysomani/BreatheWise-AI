@@ -16,7 +16,54 @@ export interface ValidatedMeasurement {
   qualityFlags: string[];
 }
 
-// Physical upper limits based on maximum atmospheric concentrations ever recorded
+/**
+ * Physical upper concentration plausibility ceilings.
+ * 
+ * SCIENTIFIC JUSTIFICATION & EPIDEMIOLOGICAL BASIS:
+ * These ceilings represent physical upper plausibility bounds to reject corrupt instrumentation noise,
+ * stuck-at-ADC-max faults (e.g. 9999 readings), and communications framing errors, while strictly
+ * preserving even the most extreme documented atmospheric episodes in Indian and global environmental history:
+ * 
+ * 1. PM2.5 (2000 µg/m³):
+ *    - CPCB Severe breakpoint: > 250 µg/m³ (AQI 500 ceiling at 380 µg/m³).
+ *    - Historical extreme: Delhi severe post-Diwali smog peaks (Nov 2016, Nov 2019) reached 800-1200 µg/m³.
+ *    - Global record: Canadian/Australian mega-wildfire dense smoke plumes documented at 1500-1800 µg/m³.
+ *    - Ceiling of 2000 µg/m³ is > 5x the AQI 500 boundary, accommodating any real-world emergency while rejecting sensor faults.
+ * 
+ * 2. PM10 (3000 µg/m³):
+ *    - CPCB Severe breakpoint: > 430 µg/m³ (AQI 500 ceiling at 550 µg/m³).
+ *    - Historical extreme: Thar desert dust storms impacting Indo-Gangetic Plains (June 2018) reached 1800-2200 µg/m³.
+ *    - Ceiling of 3000 µg/m³ is > 5x the AQI 500 boundary, safely accepting intense particulate storms.
+ * 
+ * 3. NO2 (1500 µg/m³):
+ *    - CPCB Severe breakpoint: > 400 µg/m³ (AQI 500 ceiling at 600 µg/m³).
+ *    - Historical extreme: Dense traffic canyon curbside peaks rarely exceed 400-500 µg/m³.
+ *    - 1500 µg/m³ (~0.80 ppm at 25°C 1 atm) represents a massive 2.5x margin over AQI 500.
+ * 
+ * 4. SO2 (3000 µg/m³):
+ *    - CPCB Severe breakpoint: > 1600 µg/m³ (AQI 500 ceiling at 2400 µg/m³).
+ *    - Historical extreme: Severe industrial plume / volcanic ash scenarios.
+ *    - 3000 µg/m³ (~1.15 ppm at 25°C 1 atm) provides safe headroom over the 2400 µg/m³ ceiling.
+ * 
+ * 5. CO (150 mg/m³):
+ *    - CPCB Severe breakpoint: > 34 mg/m³ (AQI 500 ceiling at 50 mg/m³ = ~43.7 ppm).
+ *    - Urban ambient CO levels rarely exceed 10-25 mg/m³; confined tunnel peaks reach 40-60 mg/m³.
+ *    - 150 mg/m³ (~131 ppm) is 3x the CPCB AQI 500 limit and well below NIOSH IDLH (1200 ppm), rejecting sensor failure.
+ * 
+ * 6. O3 (1500 µg/m³):
+ *    - CPCB Severe breakpoint: > 748 µg/m³ (AQI 500 ceiling at 1000 µg/m³ = ~0.51 ppm).
+ *    - Photochemical smog peak in global mega-cities (e.g. Mexico City 1980s) peaked around 800-1000 µg/m³.
+ *    - 1500 µg/m³ (~0.76 ppm) provides 1.5x buffer over maximum possible ambient tropospheric ozone.
+ * 
+ * 7. NH3 (3000 µg/m³):
+ *    - CPCB Severe breakpoint: > 1800 µg/m³ (AQI 500 ceiling at 2400 µg/m³).
+ *    - Landfill and intensive agricultural plume buffer up to 3000 µg/m³ (~4.3 ppm).
+ * 
+ * 8. Pb (50 µg/m³):
+ *    - CPCB Severe breakpoint: > 3.5 µg/m³ (AQI 500 ceiling at 5.0 µg/m³).
+ *    - Ambient urban lead concentrations are < 1.0 µg/m³; battery smelting industrial vicinities peak < 15-20 µg/m³.
+ *    - 50 µg/m³ is 10x the CPCB AQI 500 ceiling.
+ */
 export const PHYSICAL_CONCENTRATION_LIMITS: Record<PollutantCode, { max: number; unit: string }> = {
   'PM2.5': { max: 2000, unit: 'µg/m³' },
   'PM10': { max: 3000, unit: 'µg/m³' },
@@ -30,7 +77,17 @@ export const PHYSICAL_CONCENTRATION_LIMITS: Record<PollutantCode, { max: number;
 
 export const PHYSICAL_CONCENTRATION_CEILINGS = PHYSICAL_CONCENTRATION_LIMITS;
 
-const FUTURE_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes max clock drift allowed
+/**
+ * Future clock drift tolerance: 5 minutes (300,000 ms).
+ * 
+ * TECHNICAL JUSTIFICATION:
+ * In distributed CAAQMS monitoring networks and IoT edge stations, telemetry loggers use NTP daemon sync.
+ * Normal network latency, jitter, and RTC clock drift between sensor loggers and ingestion servers typically
+ * remain within 1-2 seconds. A 5-minute tolerance window is the industry standard (aligned with Kerberos,
+ * AWS Signature v4, and OAuth 2.0 clock skew thresholds). Any observation timestamp > 5 minutes in the future
+ * indicates misconfigured edge RTC clocks, unparsed timezone offsets, or telemetry corruption.
+ */
+export const FUTURE_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes max clock drift allowed
 
 /**
  * Validates a single incoming pollutant measurement from an upstream provider.

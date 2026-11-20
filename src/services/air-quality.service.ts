@@ -389,8 +389,8 @@ export const airQualityService = {
         : CPCB_HEALTH_STATEMENTS.UNAVAILABLE,
       methodology: 'CPCB_NAQI_INDIA_2014',
       reason: isRegulatoryCompliant
-        ? 'Official 24-hour CPCB regulatory average with validated completeness.'
-        : `Snapshot observation represents ${snapshot.completenessHours ?? 1} hour(s) of valid data. Official CPCB regulatory AQI mandates at least 16 hours of valid data in the 24-hour monitoring cycle (non-continuous data accepted).`,
+        ? 'CPCB National AQI: Validated completeness across criteria pollutants (24-hour averages for PM/gases, 8-hour running mean for CO/O3).'
+        : `Snapshot observation represents ${snapshot.completenessHours ?? 1} hour(s) of valid data. CPCB National AQI mandates at least 16 hours of valid data in the 24-hour monitoring cycle (non-continuous data accepted).`,
     };
 
     return {

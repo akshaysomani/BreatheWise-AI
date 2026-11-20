@@ -209,8 +209,8 @@ export const CPCB_HEALTH_STATEMENTS: Record<CpcbCategory | 'INSUFFICIENT_DATA' |
     indoorGuidance: 'Maintain standard air quality hygiene based on seasonal smog expectations.',
   },
   UNAVAILABLE: {
-    shortStatement: 'Official 24-hour CPCB regulatory average unavailable',
-    description: 'Official CPCB regulatory AQI mandates a 24-hour monitoring cycle with at least 16 hours of valid data (non-continuous data accepted) per MoEFCC protocol.',
+    shortStatement: 'CPCB National AQI unavailable',
+    description: 'CPCB National AQI combines 24-hour averages (PM2.5, PM10, NO2, SO2, NH3, Pb) and 8-hour running averages (CO, O3). Requires at least 16 hours of valid data in the 24-hour cycle per MoEFCC protocol.',
     colorHex: '#68766C',
     colorClass: 'text-[#48534C] bg-[#F0F2EF] border-[#68766C]/30',
     generalPublicAdvice: 'Refer to the short-term 1-hour acute indicator for immediate exposure guidance.',
@@ -546,44 +546,53 @@ export function calculateOfficialCpcbAqi(
 
     const is8HourPollutant = code === 'CO' || code === 'O3';
     const averagingPeriodHours: 24 | 8 = is8HourPollutant ? 8 : 24;
+    const activeWindowHours: 24 | 8 = averagingPeriodHours;
+    const activeWindowThresholdHours = is8HourPollutant ? 6 : 16; // 6h (75%) engineering safeguard for 8h window; 16h for 24h cycle
 
-    // CPCB Standard: Minimum 16 hours of data in the 24-hour cycle required for sub-index calculation
-    const isSubIndexEligible = validObservationHours >= 16;
+    // CPCB Statutory Rule: Minimum 16 hours of data in the 24-hour cycle required for sub-index calculation
+    const satisfiesCpcbCycleCompleteness = validObservationHours >= 16;
+
     let finalConcentration: number | null = null;
     let subIndex: number | null = null;
     let rejectionReason: string | undefined = undefined;
+    let activeWindowObservationHours = 0;
+    let engineeringSafeguardSatisfied = false;
 
-    if (!isSubIndexEligible) {
-      rejectionReason = `Insufficient valid observation hours (${validObservationHours}/24 hrs). CPCB protocol requires at least 16 valid observation hours in the 24-hour cycle.`;
-    } else {
-      if (is8HourPollutant) {
-        // 8-hour running average: average of hourly bins within the active 8-hour window [asOfHourKey - 7, asOfHourKey]
-        const asOfHourKey = Math.floor(asOfMs / (60 * 60 * 1000));
-        const min8hHourKey = asOfHourKey - 7;
-        
-        let sum8h = 0;
-        let count8h = 0;
+    if (is8HourPollutant) {
+      // 8-hour running average: average of distinct hourly bins within the active 8-hour window [asOfHourKey - 7, asOfHourKey]
+      const asOfHourKey = Math.floor(asOfMs / (60 * 60 * 1000));
+      const min8hHourKey = asOfHourKey - 7;
+      
+      let sum8h = 0;
+      let count8h = 0;
 
-        for (const [hKey, valuesInHour] of hourMap.entries()) {
-          if (hKey >= min8hHourKey && hKey <= asOfHourKey) {
-            const hourAvg = valuesInHour.reduce((a, b) => a + b, 0) / valuesInHour.length;
-            sum8h += hourAvg;
-            count8h += 1;
-          }
+      for (const [hKey, valuesInHour] of hourMap.entries()) {
+        if (hKey >= min8hHourKey && hKey <= asOfHourKey) {
+          const hourAvg = valuesInHour.reduce((a, b) => a + b, 0) / valuesInHour.length;
+          sum8h += hourAvg;
+          count8h += 1;
         }
+      }
 
-        if (count8h > 0) {
-          finalConcentration = sum8h / count8h;
-        } else {
-          // If no samples in the immediate 8h window, fallback to all available hours in the cycle
-          let sumAll = 0;
-          for (const valuesInHour of hourMap.values()) {
-            sumAll += valuesInHour.reduce((a, b) => a + b, 0) / valuesInHour.length;
-          }
-          finalConcentration = sumAll / validObservationHours;
-        }
+      activeWindowObservationHours = count8h;
+      engineeringSafeguardSatisfied = count8h >= activeWindowThresholdHours;
+
+      if (!satisfiesCpcbCycleCompleteness) {
+        rejectionReason = `Insufficient valid observation hours in 24-hour cycle (${validObservationHours}/24 hrs). CPCB protocol requires at least 16 valid observation hours.`;
+      } else if (!engineeringSafeguardSatisfied) {
+        // CPCB 24h threshold was met, but active 8h running window has insufficient observations (< 6 hours / 75%)
+        rejectionReason = `Engineering safeguard: Active 8-hour window contains only ${count8h}/8 valid hourly observations (minimum 6 hours / 75% data completeness required for representative running average). Note: CPCB requires 16h in 24h cycle; 6h in 8h window is an engineering data-quality safeguard.`;
       } else {
-        // 24-hour arithmetic average across distinct hourly bin means
+        finalConcentration = sum8h / count8h;
+      }
+    } else {
+      // 24-hour arithmetic average across distinct hourly bin means
+      activeWindowObservationHours = validObservationHours;
+      engineeringSafeguardSatisfied = satisfiesCpcbCycleCompleteness;
+
+      if (!satisfiesCpcbCycleCompleteness) {
+        rejectionReason = `Insufficient valid observation hours (${validObservationHours}/24 hrs). CPCB protocol requires at least 16 valid observation hours in the 24-hour cycle.`;
+      } else {
         let sum24h = 0;
         for (const valuesInHour of hourMap.values()) {
           const hourAvg = valuesInHour.reduce((a, b) => a + b, 0) / valuesInHour.length;
@@ -591,17 +600,18 @@ export function calculateOfficialCpcbAqi(
         }
         finalConcentration = sum24h / validObservationHours;
       }
-
-      if (finalConcentration !== null) {
-        finalConcentration = Math.round(finalConcentration * 100) / 100;
-        const res = calculateCpcbSubIndex(code, finalConcentration);
-        subIndex = res.subIndex;
-      }
     }
 
-    if (isSubIndexEligible && subIndex !== null) {
-      subIndices[code] = subIndex;
-      validPollutants.push(code);
+    const isSubIndexEligible = satisfiesCpcbCycleCompleteness && engineeringSafeguardSatisfied;
+
+    if (isSubIndexEligible && finalConcentration !== null) {
+      finalConcentration = Math.round(finalConcentration * 100) / 100;
+      const res = calculateCpcbSubIndex(code, finalConcentration);
+      subIndex = res.subIndex;
+      if (subIndex !== null) {
+        subIndices[code] = subIndex;
+        validPollutants.push(code);
+      }
     }
 
     pollutantAudits[code] = {
@@ -613,9 +623,13 @@ export function calculateOfficialCpcbAqi(
       dataCoverageHours: validObservationHours,
       completenessThresholdHours: 16,
       isSubIndexEligible,
-      concentration: finalConcentration,
+      activeWindowHours,
+      activeWindowObservationHours,
+      activeWindowThresholdHours,
+      engineeringSafeguardSatisfied,
+      concentration: isSubIndexEligible ? finalConcentration : null,
       unit: code === 'CO' ? 'mg/m³' : 'µg/m³',
-      subIndex,
+      subIndex: isSubIndexEligible ? subIndex : null,
       rejectionReason,
     };
   }
@@ -627,8 +641,8 @@ export function calculateOfficialCpcbAqi(
 
   if (!isOverallAqiEligible) {
     const reason = maxCompletenessHours < 16
-      ? `Insufficient valid observation data (${maxCompletenessHours}/24 hours). Official CPCB regulatory AQI mandates at least 16 hours of valid data in the 24-hour monitoring cycle (non-continuous data accepted).`
-      : `Insufficient parameters with 16-hour valid data completeness (${validPollutants.length} valid). CPCB requires at least 3 parameters with mandatory PM2.5 or PM10.`;
+      ? `Insufficient valid observation data (${maxCompletenessHours}/24 hours). CPCB National AQI mandates at least 16 hours of valid data in the 24-hour monitoring cycle (non-continuous data accepted).`
+      : `Insufficient parameters with 16-hour valid data completeness (${validPollutants.length} valid). CPCB National AQI requires at least 3 eligible parameters with mandatory PM2.5 or PM10.`;
 
     return {
       status: maxCompletenessHours < 16 ? 'INSUFFICIENT_COMPLETENESS' : 'INSUFFICIENT_POLLUTANTS',
@@ -687,7 +701,7 @@ export function calculateOfficialCpcbAqi(
     pollutantAudits,
     healthGuidance,
     methodology: 'CPCB_NAQI_INDIA_2014',
-    reason: 'Satisfies official CPCB 24-hour regulatory data completeness (>= 16 valid observation hours) and parameter sufficiency standards.',
+    reason: 'Satisfies CPCB National AQI data completeness (>= 16 valid observation hours in 24h cycle, 8h running mean for CO/O3) and parameter sufficiency standards.',
   };
 }
 
@@ -850,7 +864,7 @@ export function calculateCpcbAqi(inputs: RawPollutantInput[]): {
     subIndices: shortTermIndicator.subIndices,
     healthGuidance: CPCB_HEALTH_STATEMENTS.UNAVAILABLE,
     methodology: 'CPCB_NAQI_INDIA_2014',
-    reason: 'Single hourly sensor observation does not meet the minimum 16 hours of valid data required for official CPCB 24-hour regulatory AQI (non-continuous data accepted).',
+    reason: 'Single hourly sensor observation does not meet the minimum 16 hours of valid data required for CPCB National AQI (non-continuous data accepted).',
   };
 
   // Construct backward-compatible aqiResult
