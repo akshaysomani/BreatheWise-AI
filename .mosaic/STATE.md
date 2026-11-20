@@ -3,7 +3,7 @@
 **Competition:** Prompt War — Challenge 6: Urban Air Quality Assistant  
 **Target Score:** 97.50+ / 100  
 **Current Phase:** Module 5 COMPLETED & VERIFIED — AI Assistant & Intelligent Recommendations Formally Closed  
-**Document Version:** 1.6.0  
+**Document Version:** 1.7.0  
 **Last Updated:** 2026-11-20  
 
 ---
@@ -31,21 +31,21 @@
 
 ## 3. Current Module Status
 - **Current Module:** `Module 5 — AI Assistant & Intelligent Recommendations`
-- **Status:** **COMPLETED, SCIENTIFICALLY VALIDATED & INDEPENDENTLY VERIFIED (259/259 Vitest Tests Passing, 33/33 Playwright Browser Tests Passing)**
+- **Status:** **COMPLETED, SCIENTIFICALLY VALIDATED & INDEPENDENTLY VERIFIED (263/263 Vitest Tests Passing, 36/36 Playwright Browser Tests Passing, Real ESLint 0 Errors)**
 - **Completion Evidence:**
   - **Five Connected M5 Capabilities Delivered & Scientifically Audited:**
     1. *BreatheWise AI Assistant:* Conversational environmental intelligence grounded in real-time verified CPCB telemetry, 2-decimal geocoordinate quantization (~1.1 km), and user household risk profiles.
-    2. *Personalized Daily Routine Generator:* Diurnal phase breakdown (Morning 06:00–11:00, Afternoon 12:00–17:00, Evening 18:00–23:00) with activity windows, boundary layer dispersion modeling, and night-time indoor air sealing.
-    3. *Indoor Air Quality (IAQ) Advisor:* Clean Air Delivery Rate (CADR) room volume calculator using an acute 5.0 ACH particulate mitigation design target (CDC Clean Air in Buildings Challenge / AHAM CADR guidelines), clean-air delivery deficit warnings, source control protocols, and scientific debunking of houseplant air-purification myths (Waring et al., 2020).
-    4. *Family-Aware Health-Protection Guidance:* Vulnerability stratification (infants, asthmatics, elderly, cardiovascular disease); symptom-based emergency triage directing users to 112 (India's ERSS) only when acute medical distress occurs; certified N95/N99/FFP2 respirator guidance with explicit disclosures regarding particulate filtration vs. lack of gas adsorption.
+    2. *Personalized Daily Routine Generator:* Diurnal phase breakdown (Morning, Afternoon, Evening) with activity windows, boundary layer dispersion modeling, night-time indoor air sealing, and strictly conditioned afternoon cross-ventilation (windows kept sealed if AQI > 100).
+    3. *Indoor Air Quality (IAQ) Advisor:* Clean Air Delivery Rate (CADR) room volume calculator using an acute 5.0 ACH particulate mitigation design target (CDC Clean Air in Buildings Challenge / AHAM CADR guidelines), explicit out-of-range input validation errors (Area 20–5,000 sq ft, Height 7–18 ft) with inline UI alerts, clean-air delivery deficit warnings, source control protocols, and scientific debunking of houseplant air-purification myths (Waring et al., 2020).
+    4. *Family-Aware Health-Protection Guidance:* Vulnerability stratification (infants, asthmatics, elderly, cardiovascular disease); symptom-based emergency triage directing users to 112 (India's ERSS) only when acute medical distress occurs; certified N95/N99/FFP2 respirator guidance with explicit disclosures regarding particulate filtration vs. lack of gas adsorption (and consumer carbon layers).
     5. *Sustainable Lifestyle & Commute Guidance:* Mass transit mode shift emissions vs. acute exposure trade-offs with strict health-first prioritization (never advise cycling/walking in Poor/Very Poor/Severe AQI).
   - **6-Field Explainability Contract:** Strict Zod validation and UI rendering of `action`, `reason`, `expectedBenefit`, `measurableImpact`, `assumptions`, and `uncertainty` with collapsible scientific disclosures and feedback loops.
-  - **Server-Side Gemini Integration & Deterministic Fallback:** Dual-engine architecture with 8-second bounded execution for Google Gemini 1.5 Flash (`gemini-1.5-flash`), environment-configurable model selection, and instant deterministic fallback to an 8-rule peer-reviewed scientific rules engine when unconfigured or offline.
+  - **Server-Side Gemini Integration & Deterministic Fallback:** Server-side client using active Google AI Studio Flash model `gemini-3.8-flash` (`GEMINI_MODEL`), with 8-second bounded execution, HTTP 400/404 retired-model failover, and honest **BLOCKED DUE TO MISSING PROVIDER CREDENTIALS** classification falling back to an 8-rule peer-reviewed scientific rules engine.
   - **AI Safety & Prompt Defense:** Isolated XML delimiter system boundaries (`<SYSTEM_PROMPT>`, `<ENVIRONMENTAL_EVIDENCE>`, `<USER_CONTEXT>`, `<USER_QUERY>`), delimiter breakout stripping, injection scanning, and output sanitization scrubbing HTML/scripts/eval/image tracking payloads.
   - **Zero-Fabrication Telemetry Policy:** Real database/provider environmental observations injected into model context; honest `NO_DATA` when coordinates lack observations.
-  - **Automated Verification:** **259/259 unit, service, adversarial and integration tests passing** across 17 Vitest test suites (`npx vitest run`).
-  - **Browser Automation:** **33/33 Playwright tests passing** across Desktop Chrome (1440x900), Mobile Small (360x640), and Mobile Standard (390x844).
-  - **Static Analysis & Build:** `npx tsc --noEmit` passing with 0 errors; Next.js production build succeeding with all 24 routes prerendered.
+  - **Automated Verification:** **263/263 unit, service, adversarial and integration tests passing** across 17 Vitest test suites (`npx vitest run`).
+  - **Browser Automation:** **36/36 Playwright tests passing** across Desktop Chrome (1440x900), Mobile Small (360x640), and Mobile Standard (390x844).
+  - **Static Analysis & Build:** Real ESLint configured (`npm run lint`: 0 errors, 0 warnings); `npx tsc --noEmit` passing with 0 errors; Next.js production build succeeding with all 24 routes prerendered.
 - **Next Phase:** Module 6 — Impact Tracker & Community Features (Awaiting user authorization; strictly NOT started).
 
 ---
@@ -62,7 +62,7 @@
   - [x] **M4.1: Live Provider Integration & Environmental Data Integrity Audit** (Completed & Verified)
   - [x] **M4.1.1: Scientific AQI Validation & Final Evidence Audit** (Completed & Verified)
   - [x] **M4.1.2: CPCB Averaging Rules Correction & Final Scientific Verification** (Completed & Verified)
-- [x] **M5: AI Assistant & Intelligent Recommendations** (Completed & Verified — 255/255 unit tests, 33/33 Playwright browser tests)
+- [x] **M5: AI Assistant & Intelligent Recommendations** (Completed & Verified — 263/263 unit tests, 36/36 Playwright browser tests, 0 lint errors)
 
 ---
 

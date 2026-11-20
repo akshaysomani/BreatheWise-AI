@@ -28,7 +28,7 @@ import { logger } from '@/lib/logger';
  *    if invalid, sanitizes and returns deterministic guidance.
  */
 
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const DEFAULT_TIMEOUT_MS = 8000;
 const MAX_OUTPUT_TOKENS = 1500;
 
@@ -83,9 +83,26 @@ export async function generateAssistantResponse(
 
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
-      logger.warn('Gemini API returned error response; falling back to deterministic engine', {
-        status: response.status,
-      });
+      const isModelError =
+        response.status === 404 ||
+        (response.status === 400 &&
+          (errText.toLowerCase().includes('not found') ||
+            errText.toLowerCase().includes('deprecated') ||
+            errText.toLowerCase().includes('retired') ||
+            errText.toLowerCase().includes('discontinued')));
+
+      if (isModelError) {
+        logger.warn('Configured Gemini model retired, invalid or not found; falling back to deterministic engine', {
+          modelName,
+          status: response.status,
+          error: errText.slice(0, 300),
+        });
+      } else {
+        logger.warn('Gemini API returned error response; falling back to deterministic engine', {
+          modelName,
+          status: response.status,
+        });
+      }
       return deterministicFallbackEngine.generateChatResponse(input.message, payload);
     }
 

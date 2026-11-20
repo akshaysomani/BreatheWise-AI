@@ -11,6 +11,7 @@ import { createTestAuthHeader } from '@/lib/auth-guard';
 import { resetRateLimits } from '@/lib/rate-limiter';
 import { buildAssistantContext, formatEnvironmentXml, formatUserContextXml } from '@/lib/ai/context-builder';
 import { deterministicFallbackEngine } from '@/lib/ai/deterministic-fallback';
+import { generateAssistantResponse } from '@/lib/ai/gemini-client';
 import { structuredRecommendationSchema, assistantChatResponseSchema } from '@/lib/validations/assistant.schema';
 import { airQualityRepository } from '@/repositories/air-quality.repository';
 import { recommendationRepository } from '@/repositories/recommendation.repository';
@@ -248,22 +249,20 @@ describe('BreatheWise AI — Module 5 Assistant & Recommendations Suite', () => 
       expect(advice.recommendations.length).toBeGreaterThan(0);
     });
 
-    it('enforces physical bounds on zero, negative, and extreme dimensions', () => {
-      // Zero dimensions should be safely clamped to minimum physical room dimensions (10 sq ft, 5 ft height)
-      const zeroResult = householdService.calculateCadrRequirements(0, 0, null, 5.0);
-      expect(zeroResult.roomVolumeCuFt).toBe(50); // 10 sq ft * 5 ft
-      expect(zeroResult.requiredCADR_CFM).toBe(4); // 50 * 5 / 60 = 4.16 -> 4 CFM
-      expect(zeroResult.requiredCADR_M3H).toBe(7); // 4 * 1.69901 = 6.79 -> 7 m3/h
+    it('enforces physical bounds with explicit validation errors on zero, negative, and extreme dimensions', () => {
+      // Zero dimensions should throw explicit validation errors
+      expect(() => householdService.calculateCadrRequirements(0, 9, null, 5.0)).toThrow('Invalid room floor area');
+      expect(() => householdService.calculateCadrRequirements(200, 0, null, 5.0)).toThrow('Invalid ceiling height');
 
-      // Negative dimensions clamped
-      const negResult = householdService.calculateCadrRequirements(-200, -9, -50, 5.0);
-      expect(negResult.roomVolumeCuFt).toBe(50);
-      expect(negResult.deficitCADR_CFM).toBe(4);
+      // Negative dimensions should throw explicit validation errors
+      expect(() => householdService.calculateCadrRequirements(-200, 9, null, 5.0)).toThrow('Invalid room floor area');
+      expect(() => householdService.calculateCadrRequirements(200, -9, null, 5.0)).toThrow('Invalid ceiling height');
 
-      // Extreme dimensions clamped to maximum reasonable residential bounds (10,000 sq ft, 30 ft height)
-      const extremeResult = householdService.calculateCadrRequirements(500000, 100, 10000, 5.0);
-      expect(extremeResult.roomVolumeCuFt).toBe(300000); // 10,000 * 30
-      expect(extremeResult.requiredCADR_CFM).toBe(25000); // 300,000 * 5 / 60
+      // Extreme dimensions outside acceptable range (20-5000 sq ft, 7-18 ft height) should throw
+      expect(() => householdService.calculateCadrRequirements(15, 9, null, 5.0)).toThrow('Invalid room floor area');
+      expect(() => householdService.calculateCadrRequirements(6000, 9, null, 5.0)).toThrow('Invalid room floor area');
+      expect(() => householdService.calculateCadrRequirements(200, 5, null, 5.0)).toThrow('Invalid ceiling height');
+      expect(() => householdService.calculateCadrRequirements(200, 25, null, 5.0)).toThrow('Invalid ceiling height');
     });
 
     it('correctly calculates CADR in both CFM and m³/h with exact conversion ratio', () => {
@@ -305,6 +304,28 @@ describe('BreatheWise AI — Module 5 Assistant & Recommendations Suite', () => 
         expect(p.uncertainty).toBeTruthy();
         expect(p.freshnessAndSource).toBeTruthy();
       }
+    });
+
+    it('recommends closed windows when afternoon AQI is elevated (>100)', async () => {
+      const context = await buildAssistantContext(userA.id);
+      context.environment.status = 'AVAILABLE';
+      context.environment.aqi = 180;
+      context.environment.category = 'MODERATE';
+
+      const plan = deterministicFallbackEngine.generateDailyRoutine(context);
+      const afternoon = plan.periods.find((p) => p.period === 'AFTERNOON');
+      expect(afternoon?.action).toContain('Maintain Closed Windows');
+    });
+
+    it('recommends conditional cross-ventilation only when afternoon AQI is verified clean (<=100)', async () => {
+      const context = await buildAssistantContext(userA.id);
+      context.environment.status = 'AVAILABLE';
+      context.environment.aqi = 45;
+      context.environment.category = 'GOOD';
+
+      const plan = deterministicFallbackEngine.generateDailyRoutine(context);
+      const afternoon = plan.periods.find((p) => p.period === 'AFTERNOON');
+      expect(afternoon?.action).toContain('Conditional Midday Cross-Ventilation');
     });
   });
 
@@ -384,8 +405,9 @@ describe('BreatheWise AI — Module 5 Assistant & Recommendations Suite', () => 
 
       const steps = response.recommendations[0].implementationSteps.join(' ');
       expect(steps).toContain('N95');
-      expect(steps).toContain('airtight seal');
-      expect(steps).toContain('do not filter combustion gases');
+      expect(steps).toContain('airtight facial seal');
+      expect(steps).toContain('DO NOT protect against toxic combustion gases');
+      expect(steps).toContain('Thin consumer carbon layers do not provide certified chemical gas protection');
     });
   });
 
@@ -519,6 +541,61 @@ describe('BreatheWise AI — Module 5 Assistant & Recommendations Suite', () => 
 
       const res = await postFeedback(req);
       expect(res.status).toBe(201);
+    });
+  });
+
+  // =========================================================================
+  // 7. Model Lifecycle & Error Resilience
+  // =========================================================================
+  describe('7. Model Lifecycle & Error Resilience', () => {
+    it('gracefully falls back to deterministic engine when GEMINI_API_KEY is missing', async () => {
+      const origKey = process.env.GEMINI_API_KEY;
+      delete process.env.GEMINI_API_KEY;
+      try {
+        const context = await buildAssistantContext(userA.id);
+        const res = await generateAssistantResponse(
+          { message: 'Should I open windows today?' },
+          context
+        );
+        expect(res.reply).toBeTruthy();
+        expect(res.recommendations.length).toBeGreaterThan(0);
+        expect(res.recommendations[0].provenance).toBe('PRE_REVIEWED_RULE');
+      } finally {
+        process.env.GEMINI_API_KEY = origKey;
+      }
+    });
+
+    it('handles retired or not found model (HTTP 404 / 400) by falling back to deterministic engine', async () => {
+      const origKey = process.env.GEMINI_API_KEY;
+      const origFetch = globalThis.fetch;
+      process.env.GEMINI_API_KEY = 'test-mock-key';
+
+      // Mock 404 Not Found (e.g. retired model endpoint)
+      globalThis.fetch = (async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 404,
+              message: 'models/gemini-1.5-flash is not found for API version v1beta, or is not supported.',
+              status: 'NOT_FOUND',
+            },
+          }),
+          { status: 404, headers: { 'Content-Type': 'application/json' } }
+        )) as any;
+
+      try {
+        const context = await buildAssistantContext(userA.id);
+        const res = await generateAssistantResponse(
+          { message: 'Can I go for a jog outside?' },
+          context
+        );
+        expect(res.reply).toBeTruthy();
+        expect(res.recommendations.length).toBeGreaterThan(0);
+        expect(res.recommendations[0].provenance).toBe('PRE_REVIEWED_RULE');
+      } finally {
+        process.env.GEMINI_API_KEY = origKey;
+        globalThis.fetch = origFetch;
+      }
     });
   });
 });

@@ -149,4 +149,35 @@ test.describe('BreatheWise AI Assistant & Intelligent Recommendations (M5 Scope)
     // Verify required CADR calculated (300 sq ft * 9 ft * 5 ACH / 60 = 225 CFM)
     await expect(page.locator('text=225 CFM').first()).toBeVisible({ timeout: 10_000 });
   });
+
+  test('Flow 4: Indoor IAQ Advisor Input Validation (Rejects Out-of-Bounds Dimensions)', async ({ page }) => {
+    const testUser = {
+      name: 'Validation Test User',
+      email: `val_e2e_${Date.now()}_${Math.random().toString(36).substring(7)}@breathewise.test`,
+      password: 'SecurePassword123!',
+    };
+
+    await page.goto('/register');
+    await page.fill('input#register-name', testUser.name);
+    await page.fill('input#register-email', testUser.email);
+    await page.fill('input#register-password', testUser.password);
+    await page.fill('input#register-confirm-password', testUser.password);
+    await page.click('form button[type="submit"]');
+
+    await page.waitForURL('**/dashboard', { timeout: 15_000 });
+
+    // Switch to AI Assistant -> Indoor IAQ Advisor
+    await page.locator('button:has-text("AI Assistant")').first().click();
+    await page.locator('button:has-text("Indoor IAQ Advisor")').first().click();
+
+    // Enter out-of-bounds room area: 10 sq ft (< 20 minimum)
+    const floorAreaInput = page.locator('input[type="number"]').first();
+    await floorAreaInput.fill('10');
+
+    const recalculateButton = page.locator('button:has-text("Recalculate IAQ Defense")');
+    await recalculateButton.click();
+
+    // Verify error banner is displayed
+    await expect(page.locator('text=Room floor area must be between 20 and 5,000 sq ft.')).toBeVisible();
+  });
 });

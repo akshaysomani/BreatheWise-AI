@@ -28,6 +28,7 @@
 /.nyc_output
 test-results/
 playwright-report/
+*.tsbuildinfo
 
 # IDE & OS Metadata
 .DS_Store

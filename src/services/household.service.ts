@@ -34,7 +34,8 @@ export const householdService = {
    * - UNIT CONVERSIONS: 1 CFM (cubic feet per minute) = 1.69901 m³/h (cubic meters per hour).
    *   Formula (CFM): CADR (CFM) = (Room Volume in cu ft * Target ACH) / 60 minutes.
    *   Formula (m³/h): CADR (m³/h) = Room Volume in m³ * Target ACH.
-   * - BOUNDS: Inputs are bounded to physically plausible residential dimensions (10-10,000 sq ft, 5-30 ft height).
+   * - BOUNDS: Inputs are validated against plausible residential dimensions (20-5,000 sq ft, 7-18 ft height).
+   *   Out-of-range inputs throw explicit validation errors rather than silently clamping.
    */
   calculateCadrRequirements(
     floorAreaSqFt: number,
@@ -42,13 +43,21 @@ export const householdService = {
     currentPurifierCADR: number | null = null,
     targetACH = 5.0 // Particulate filtration design target during acute smog episodes
   ): CadrAnalysis {
-    // Defensive physical bounding
-    const safeArea = Math.max(10, Math.min(10000, Number.isFinite(floorAreaSqFt) ? floorAreaSqFt : 200));
-    const safeHeight = Math.max(5, Math.min(30, Number.isFinite(ceilingHeightFt) ? ceilingHeightFt : 9.0));
-    const safeTargetACH = Math.max(1, Math.min(12, Number.isFinite(targetACH) ? targetACH : 5.0));
+    if (typeof floorAreaSqFt !== 'number' || !Number.isFinite(floorAreaSqFt) || floorAreaSqFt < 20 || floorAreaSqFt > 5000) {
+      throw new Error(`Invalid room floor area: ${floorAreaSqFt}. Must be a finite number between 20 and 5,000 sq ft.`);
+    }
+    if (typeof ceilingHeightFt !== 'number' || !Number.isFinite(ceilingHeightFt) || ceilingHeightFt < 7 || ceilingHeightFt > 18) {
+      throw new Error(`Invalid ceiling height: ${ceilingHeightFt}. Must be a finite number between 7 and 18 ft.`);
+    }
+    if (targetACH !== undefined && (typeof targetACH !== 'number' || !Number.isFinite(targetACH) || targetACH < 1 || targetACH > 12)) {
+      throw new Error(`Invalid target ACH: ${targetACH}. Must be between 1.0 and 12.0.`);
+    }
+    if (currentPurifierCADR !== null && currentPurifierCADR !== undefined && (typeof currentPurifierCADR !== 'number' || !Number.isFinite(currentPurifierCADR) || currentPurifierCADR < 0 || currentPurifierCADR > 5000)) {
+      throw new Error(`Invalid purifier CADR: ${currentPurifierCADR}. Must be a non-negative number up to 5,000 CFM.`);
+    }
 
-    const roomVolume = Math.round(safeArea * safeHeight);
-    const requiredCFM = Math.round((roomVolume * safeTargetACH) / 60);
+    const roomVolume = Math.round(floorAreaSqFt * ceilingHeightFt);
+    const requiredCFM = Math.round((roomVolume * targetACH) / 60);
     const requiredM3H = Math.round(requiredCFM * 1.69901);
 
     let isCurrentPurifierAdequate = false;
@@ -56,15 +65,14 @@ export const householdService = {
     let deficit = requiredCFM;
 
     if (currentPurifierCADR !== null && currentPurifierCADR > 0) {
-      const safePurifierCADR = Math.max(0, Math.min(5000, currentPurifierCADR));
-      actualACH = Math.round(((safePurifierCADR * 60) / roomVolume) * 10) / 10;
-      isCurrentPurifierAdequate = safePurifierCADR >= requiredCFM;
-      deficit = Math.max(0, requiredCFM - safePurifierCADR);
+      actualACH = Math.round(((currentPurifierCADR * 60) / roomVolume) * 10) / 10;
+      isCurrentPurifierAdequate = currentPurifierCADR >= requiredCFM;
+      deficit = Math.max(0, requiredCFM - currentPurifierCADR);
     }
 
     return {
       roomVolumeCuFt: roomVolume,
-      targetACH: safeTargetACH,
+      targetACH,
       requiredCADR_CFM: requiredCFM,
       requiredCADR_M3H: requiredM3H,
       isCurrentPurifierAdequate,

@@ -121,7 +121,7 @@ export const deterministicFallbackEngine = {
           implementationSteps: [
             'Exercise in a sealed indoor room with an active mechanical HEPA air cleaner.',
             'If walking outdoors, choose midday windows when solar heating breaks boundary inversion.',
-            'Wear a certified, well-fitted N95 or FFP2 respirator if outdoor air smells acrid.',
+            'Wear a certified, well-fitted particulate respirator (N95, N99, or FFP2) with an airtight seal if outdoor air is hazy. Note: Particulate respirators filter aerosols (PM2.5/PM10) only and DO NOT protect against toxic combustion gases (CO, NO2, ozone). Thin consumer carbon layers do not provide certified chemical gas protection.',
           ],
           disclaimer: 'Precautionary guideline due to missing local telemetry.',
           evidenceStrength: 'PRECAUTIONARY_GUIDELINE',
@@ -142,7 +142,7 @@ export const deterministicFallbackEngine = {
           implementationSteps: [
             'Move workouts indoors to a room with an active True HEPA air purifier.',
             'Keep doors and windows firmly sealed against ambient particulate ingress.',
-            'If outdoor transit is unavoidable, wear a well-fitted certified particulate respirator (N95, N99, or FFP2) with an airtight seal. Standard particulate respirators filter particulate matter (PM2.5/PM10) but do not filter combustion gases (CO, NO2, ozone) unless fitted with activated carbon sorbents.',
+            'If outdoor transit is unavoidable, wear a certified, well-fitted particulate respirator (N95, N99, or FFP2) with an airtight facial seal. Important: Particulate respirators filter solid and liquid aerosols (PM2.5 and PM10) only, and DO NOT protect against toxic combustion gases or vapors (such as carbon monoxide, nitrogen dioxide, or ozone). Thin consumer carbon layers do not provide certified chemical gas protection. When gaseous pollution is high, avoiding exposure and staying indoors is the only effective defense.',
             'Vulnerable members (asthmatic, pediatric, senior) should stay strictly indoors. If acute respiratory distress occurs, contact emergency medical care.',
           ],
           disclaimer: 'Guidance based on CPCB NAQI health advisory criteria.',
@@ -303,7 +303,7 @@ export const deterministicFallbackEngine = {
         implementationSteps: [
           'Verify your household CADR rating meets 5.0 Air Changes per Hour for your living room.',
           'Switch kitchen cooking exhaust to high during LPG or induction frying.',
-          'Keep an N95 respirator ready for mandatory outdoor transit during smog alerts.',
+          'Keep a certified particulate respirator (N95, N99, or FFP2) ready for mandatory outdoor transit during smog alerts (particulate filtration only; does not protect against toxic gases).',
         ],
         disclaimer: 'Standard BreatheWise environmental hygiene principles.',
         evidenceStrength: 'PRECAUTIONARY_GUIDELINE',
@@ -374,30 +374,32 @@ export const deterministicFallbackEngine = {
         period: 'AFTERNOON',
         timeRange: '12:00 PM – 04:00 PM',
         action:
-          aqi !== null && aqi > 300
-            ? 'Maintain Closed Windows and Continuous HEPA Air Filtration'
-            : 'Optimal Window for Brief Controlled Natural Ventilation (20-30 Mins)',
+          aqi !== null && aqi <= 100
+            ? 'Conditional Midday Cross-Ventilation (15–20 Mins if Verified Clean)'
+            : 'Maintain Closed Windows and Continuous HEPA Air Filtration',
         reason:
-          aqi !== null && aqi > 300
-            ? 'Severe ambient pollution penetrates unsealed spaces; keep indoor environment hermetic.'
-            : 'Solar radiation expands vertical atmospheric boundary layer, diluting ground concentrations to their daily minimum.',
+          aqi !== null && aqi <= 100
+            ? 'Solar convective mixing expands vertical atmospheric boundary layer, diluting ground concentrations to daily minimum. Safe to exchange air only because ambient AQI is verified <= 100.'
+            : 'Ambient pollution levels exceed safe ventilation thresholds (AQI > 100 or unverified); opening windows will introduce heavy particulate and gaseous contaminants.',
         environmentalEvidence:
           env.status === 'AVAILABLE' && aqi !== null
-            ? `Afternoon dispersion window evaluated against current AQI ${aqi}.`
-            : 'Solar convective mixing creates daily dispersion minimum between 12:00-15:00.',
+            ? `Midday ventilation evaluated against current AQI ${aqi} (threshold: AQI <= 100).`
+            : 'Ambient telemetry unverified or elevated; maintaining sealed envelope.',
         expectedBenefit:
-          aqi !== null && aqi > 300
-            ? `Protects indoor PM2.5 below ${house.indoorPM25Target} µg/m³.`
-            : 'Flushes accumulated indoor carbon dioxide and VOCs without excessive particulate ingress.',
+          aqi !== null && aqi <= 100
+            ? 'Flushes accumulated indoor carbon dioxide and VOCs without particulate ingress.'
+            : `Protects indoor PM2.5 below ${house.indoorPM25Target} µg/m³ by preventing outdoor contaminant penetration.`,
         implementationSteps: [
-          aqi !== null && aqi > 300
-            ? 'Inspect window weather-stripping to minimize ambient infiltration.'
-            : 'Open opposing windows for 20 minutes to achieve cross-ventilation.',
-          'Run kitchen exhaust fan on high if cooking lunch.',
-          'Close windows promptly before 4:00 PM as ambient traffic increases.',
+          aqi !== null && aqi <= 100
+            ? 'Open opposing windows for 15-20 minutes to achieve cross-ventilation, provided outdoor air is visibly clear and local AQI <= 100.'
+            : 'Keep all exterior windows and doors hermetically sealed.',
+          aqi !== null && aqi <= 100
+            ? 'Verify outdoor ozone levels are not elevated during peak afternoon sunlight.'
+            : 'Run mechanical True HEPA air purifier on continuous medium setting.',
+          'Close windows promptly before 4:00 PM as ambient traffic increases and evening cooling begins.',
         ],
-        assumptions: 'Thermal buoyancy peaks during solar zenith.',
-        uncertainty: 'Neighborhood point sources (street food, localized burning) can spike curbside concentrations.',
+        assumptions: 'Thermal buoyancy peaks during solar zenith; ambient AQI <= 100 required for window opening.',
+        uncertainty: 'Curbside vehicle exhaust or neighborhood biomass burning can spike local concentrations even if regional AQI is moderate.',
         freshnessAndSource: env.status === 'AVAILABLE' ? `Source: ${env.provenance}` : 'Heuristic Model',
       },
       {

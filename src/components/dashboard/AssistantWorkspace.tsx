@@ -211,6 +211,16 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
   // Handlers: Indoor Advisor
   // -------------------------------------------------------------------------
   const calculateIndoorAdvice = async () => {
+    // Client-side validation: reject out-of-range dimensions
+    if (indoorForm.roomSizeSqFt < 20 || indoorForm.roomSizeSqFt > 5000) {
+      setIndoorError('Room floor area must be between 20 and 5,000 sq ft.');
+      return;
+    }
+    if (indoorForm.ceilingHeightFt < 7 || indoorForm.ceilingHeightFt > 18) {
+      setIndoorError('Ceiling height must be between 7 and 18 ft.');
+      return;
+    }
+
     setCalculatingIndoor(true);
     setIndoorError(null);
     try {
@@ -716,6 +726,13 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
                   className="rounded border-[#E2E8DE] text-[#397A55]"
                 />
               </div>
+
+              {indoorError && (
+                <div role="alert" className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                  <span>{indoorError}</span>
+                </div>
+              )}
 
               <Button
                 variant="primary"
