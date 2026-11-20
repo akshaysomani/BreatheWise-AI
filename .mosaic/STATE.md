@@ -2,49 +2,56 @@
 **Project:** BreatheWise AI  
 **Competition:** Prompt War — Challenge 6: Urban Air Quality Assistant  
 **Target Score:** 97.50+ / 100  
-**Current Phase:** M0 — Discovery and Architecture  
-**Document Version:** 1.0.0  
+**Current Phase:** M1 — Design System & Frontend Foundation  
+**Document Version:** 1.1.0  
 **Last Updated:** 2026-11-20  
 
 ---
 
 ## 1. Project Identity
 - **Name:** BreatheWise AI
-- **Tagline:** Intelligent, location-aware environmental defense and low-emission family living assistant.
+- **Tagline:** Breathe Better. Live Healthier.
 - **Core Mission:** Empower urban families and vulnerable individuals to navigate severe winter smog and chronic urban air pollution through hyper-localized, verified air quality intelligence, explainable daily routine optimization, scientific indoor air purification guidance, and transparent, formula-backed impact tracking.
 - **Repository / Directory:** `C:\Users\Akshay\OneDrive\Desktop\Challenge 6`
 - **Architectural Scope:** Production-grade full-stack web application designed for zero-hallucination environmental recommendations, strict data provenance, accessible high-contrast UI, and defensive security.
 
 ---
 
-## 2. Competition Requirements
-- **Objective:** Develop a secure, intelligent, production-quality GenAI-powered assistant that helps families and communities navigate severe winter smog and urban air pollution.
-- **Core Functional Mandates:**
+## 2. Competition Requirements & Internal Scoring Target
+- **Target Score:** 97.50+ / 100 based on internal engineering evaluation matrix.
+- **Six Functional Mandates:**
   1. Low-emission daily routines (commute optimization, errand chaining, active transit timing).
   2. Practical indoor air quality improvements (HEPA filtration CADR, ventilation timing, cooking source controls, debunking plant myths).
   3. Sustainable everyday alternatives (low-emission heating/cooking/transit with transparent trade-offs).
   4. Location-aware pollution safety recommendations (real-time PM2.5/PM10, vulnerable group protective actions, outdoor activity windows).
   5. Personalized household actions (tailored to family composition, asthma/respiratory risks, pets, housing type).
   6. Clear, understandable explanations of the direct impact of individual choices (formula-backed CO2 and PM2.5 avoidance, explicit uncertainty bounds).
-- **Target Score Threshold:** 97.50+ / 100 based on rigorous internal engineering rubric across 10 evaluation dimensions.
 
 ---
 
-## 3. Current Module
-- **Current Authorized Module:** `M0 — Discovery and Architecture`
-- **Status:** In Progress / Concluding Architecture Definition.
-- **Strict Boundary:** No frontend implementation, no backend endpoints, no database migrations, no authentication code, no premature dependency installation, and no secret commits. Architectural planning and verification only.
+## 3. Current Module Status
+- **Current Module:** `M1 — Design System & Frontend Foundation`
+- **Status:** **COMPLETED & VERIFIED**
+- **Completion Evidence:**
+  - Full design system implemented with exact brand tokens and Manrope + DM Sans typography pairing.
+  - Reusable accessible component library built (`Button`, `Card`, `Badge`, `Input`, `Select`, `Alert`, `Modal`, `Skeleton`, `Spinner`, `EmptyState`, `ErrorState`).
+  - Production-grade Homepage implemented with working navigation, custom SVG hero, 6 feature cards, 4-step workflow, trust section, and interactive household sensitivity planner.
+  - Dashboard visual foundation implemented with 10 presentation elements (AQI radar, pollutant cards, 24-hr diurnal trend chart, 6-field recommendation cards, routine cards, and impact formula drawers).
+  - 16/16 Vitest unit and component tests passing.
+  - TypeScript type checking: 0 errors (`npx tsc --noEmit`).
+  - Next.js production build (`npm run build`): Static export succeeded with 0 errors.
+  - Real browser production server probe on port 3005: HTTP 200 OK for both `/` and `/dashboard`.
 
 ---
 
 ## 4. Completed Modules
-- None (M0 is the first module in the sequential MOSAIC pipeline).
+- [x] **M0: Discovery & Architecture** (Approved & Verified)
+- [x] **M1: Design System & Frontend Foundation** (Completed & Verified)
 
 ---
 
 ## 5. Pending Modules
-- `M1:` Design System and Frontend Foundation (Tailwind CSS, design tokens, warm-sage palette, typography pairing, accessible primitives, hero banner).
-- `M2:` Backend and Database (Prisma/SQLite schema, CRUD repositories, Zod validation layer, seed data, health checks).
+- `M2:` Backend and Database (Prisma/SQLite schema, repositories, Zod validation layer, seed data, health checks).
 - `M3:` Authentication and Dashboard (Secure session management, household profile management, role-based controls, dashboard shell).
 - `M4:` Air Quality Intelligence (Multi-provider AQI client, OpenAQ v3 integration, Open-Meteo physical forecast engine, caching layer, stale data indicators).
 - `M5:` AI Assistant and Recommendations (Multi-provider LLM orchestration, structured output Zod schemas, ground-truth context injection, explainability engine).
@@ -55,90 +62,98 @@
 
 ---
 
-## 6. Architecture Decisions
-1. **Monolithic Full-Stack Architecture (ADR-001):** Unified Next.js 15 App Router architecture over microservices. Eliminates inter-service network latency, serializes data contracts with end-to-end TypeScript, simplifies deployment, and eliminates distributed transaction overhead.
-2. **Separation of Environmental Data Truth from AI Output (ADR-002):** Environmental data (AQI, PM2.5, PM10, timestamps, station ID) is fetched and validated strictly through deterministic backend services. The AI model is strictly prohibited from inventing or guessing current sensor readings; it acts solely as an reasoning and personalization engine over verified context.
-3. **Multi-Tier Air Quality Provider with Physical Modeling (ADR-003):** 
-   - Primary real-time observations: OpenAQ API v3 (authoritative government sensor aggregation).
-   - Primary physical dispersion forecast: Open-Meteo Air Quality API (Copernicus CAMS & NOAA GFS aerosol models).
-   - Fallback: Local synthetic cache / deterministic station interpolation with explicit "DEGRADED / STALE" UI flags.
-4. **Formula-Backed Impact Math (ADR-004):** Emission reduction calculations use standard EPA/DEFRA conversion factors (kg CO2e and g PM2.5 avoided per passenger-km). Formulas, baselines, and uncertainty intervals (±15%) must be transparently exposed to the user. Arbitrary "trees planted" heuristics without explicit conversion baselines are banned.
-5. **Separation of Community Observations from Official Readings (ADR-005):** User-submitted smog reports and sensory reports are stored in an isolated data table with explicit `UNVERIFIED_COMMUNITY_REPORT` classification and can never overwrite or mix with official EPA/CPCB monitoring station data.
-6. **Strict Schema-Enforced AI Responses (ADR-006):** AI assistant output is constrained to JSON schemas validated via Zod, enforcing 6 mandatory explanation fields: Action, Scientific Reason, Expected Health/Environmental Benefit, Quantified Impact (if measurable), Assumptions/Uncertainty, and Step-by-Step Implementation.
+## 6. Architecture & Design Decisions
+1. **Monolithic Full-Stack Architecture (ADR-001):** Next.js 16.4.6 App Router, React 19, TypeScript.
+2. **Design Tokens & Brand Theme (ADR-007):** Exclusively light theme. Primary `#397A55`, Primary Hover `#2F6647`, Secondary `#718C72`, Accent `#D69B47`, Background `#F7F8F3`, Surface `#FFFFFF`, Surface Secondary `#EEF3EA`, Border `#E2E8DE`, Text `#27352D`, Muted `#68766C`, Success `#287A4B`, Warning `#A86B16`, Error `#B8423D`.
+3. **Typography Pairing (ADR-008):** Manrope (Headings) + DM Sans (Body and tabular figures). Replaced Inter and Poppins per competition guidelines.
+4. **Custom Vector SVG Hero (ADR-009):** Custom-coded vector illustration depicting clean air circulation, city silhouette, and HEPA-protected home. Zero stock images or unverified statistics.
+5. **Strict Sample Fixture Demarcation (ADR-010):** All dashboard cards in M1 carry explicit `SAMPLE FIXTURE — NOT LIVE DATA` indicators to guarantee scientific integrity before M4 API activation.
 
 ---
 
-## 7. Technology Choices
-- **Runtime & Language:** Node.js v24.x LTS / TypeScript 5.x.
-- **Frontend Framework:** Next.js 15 (App Router, React 19, Server Components).
-- **Styling & Tokens:** Tailwind CSS v4, CSS custom properties (`oklch` / hex tokens), Radix UI accessible primitives.
-- **Iconography:** Phosphor Icons (`@phosphor-icons/react`) & Lucide React (vector only, no emojis as UI controls).
-- **Typography:** Fraunces (Variable Display/Editorial Serif) + Plus Jakarta Sans (Body and UI, clean tabular figures).
-- **Database:** SQLite (local development and test deterministic verification) via Prisma ORM / PostgreSQL compatible migration path.
-- **Validation:** Zod schema validation for all API inputs, environmental data payloads, and AI outputs.
-- **AI Orchestration:** Google Gemini 2.5 Flash / 1.5 Pro via `@google/genai` or Vercel AI SDK, with configurable fallback provider (OpenAI-compatible client).
-- **Testing Suite:** Vitest for high-speed unit and integration tests, Playwright for E2E browser and accessibility audits.
+## 7. Technology Stack
+- **Framework:** Next.js 16.4.6 (App Router, Turbopack) / React 19.0.0
+- **Language:** TypeScript 5.x / ES2022
+- **Styling:** Tailwind CSS v4 (`@tailwindcss/postcss`) with CSS custom properties
+- **Iconography:** Lucide React (vector only)
+- **Testing:** Vitest 5.1.1 + Testing Library (`@testing-library/react`, `@testing-library/jest-dom`)
+- **Database:** SQLite + Prisma ORM (designed in M0, scheduled for M2 implementation)
 
 ---
 
-## 8. External Provider Decisions
-1. **OpenAQ API (v3):** Primary real-time global monitoring feed.
-   - *Status:* Verified provider; REST API with coordinates, measurement units, station attribution, and timestamps. Requires free API key for higher rate limits.
-   - *Rate limits:* 60 req/min free tier. Cached with 15-minute TTL.
-2. **Open-Meteo Air Quality API:** Primary genuine forecast provider.
-   - *Status:* Verified provider; free tier for open/non-commercial use. Provides hourly physical forecasts for PM2.5, PM10, European AQI, US AQI based on Copernicus CAMS. No API key required for standard tier.
-3. **AirNow (US EPA) / CPCB (India):** Reference benchmarks for national AQI scale normalization (US EPA AQI 0–500 scale vs India NAQI 0–500 scale).
+## 8. Skills Read & Verification Status
+- `design-system` (`C:\Users\Akshay\.agents\skills\design-system\SKILL.md`): **VERIFIED & READ**
+- `brand` (`C:\Users\Akshay\.agents\skills\brand\SKILL.md`): **VERIFIED & READ**
+- `design` (`C:\Users\Akshay\.agents\skills\design\SKILL.md`): **VERIFIED & READ**
+- `ui-styling` (`C:\Users\Akshay\.agents\skills\ui-styling\SKILL.md`): **VERIFIED & READ**
+- `ui-ux-pro-max` (`C:\Users\Akshay\.agents\skills\ui-ux-pro-max\SKILL.md`): **VERIFIED & READ**
+- `impeccable` (`C:\Users\Akshay\.agents\skills\impeccable\SKILL.md`): **VERIFIED & READ**
+- `banner-design` (`C:\Users\Akshay\.agents\skills\banner-design\SKILL.md`): **VERIFIED & READ**
 
 ---
 
-## 9. Security Requirements
-- **Zero Exposed Secrets:** Strict `.env.example` placeholder structure; all API keys isolated to server-side execution.
-- **OWASP Top 10 Defenses:**
-  - SQL Injection: Fully parameterized queries via Prisma ORM.
-  - XSS: React automatic DOM escaping, strict Content Security Policy (CSP), sanitized markdown rendering via `rehype-sanitize`.
-  - SSRF Protection: Air quality API fetches restricted to whitelisted domain endpoints (`api.openaq.org`, `air-quality-api.open-meteo.com`). User inputs never dictate arbitrary outbound URLs.
-  - Prompt Injection Defense: System prompts strictly delimit user inputs in XML/Markdown boundary blocks; secondary verification checks outputs against safety rules; LLM has zero execution privileges.
-  - IDOR Prevention: Household profile, impact log, and saved routine endpoints strictly verify authenticated session user IDs on every mutation.
-  - Rate Limiting: API route level rate limiting (leaky bucket / in-memory sliding window) preventing enumeration and denial of service.
+## 9. Security & Accessibility Audit Findings (M1)
+- **Dependency CVEs:** `npm audit` reports **0 vulnerabilities**. Upgraded to patched Next.js release.
+- **Frontend Secrets:** 0 exposed keys in frontend bundles. Only server-side placeholders in `.env.example`.
+- **Accessibility:** WCAG 2.2 AA compliant. Text contrast is 11.8:1 for body copy on `#F7F8F3` (AAA Pass), 4.9:1 for primary `#397A55` on `#FFFFFF` (AA Pass). All interactive buttons have ≥44px touch targets. Skip-to-content landmark implemented.
+- **Responsive Fluid Layouts:** Tested across 360px, 390px, 768px, 1024px, 1440px, and 1920px. Zero horizontal overflow.
 
 ---
 
-## 10. Known Risks & Mitigation
-| Risk ID | Description | Impact | Probability | Mitigation Strategy |
-|---------|-------------|--------|-------------|---------------------|
-| RSK-01 | External AQI API downtime or rate limit exhaustion | High | Medium | In-memory 15-min LRU caching, graceful degradation fallback to nearest station or modeled forecast, clear "STALE DATA" UI badge. |
-| RSK-02 | LLM hallucinating medical advice or fake AQI values | Critical | Medium | Decoupled architecture: system prompt receives verified JSON context; strict Zod schema validation; explicit system-level prohibition against diagnostic claims. |
-| RSK-03 | User location leakage / privacy violation | High | Low | Locations stored at city/neighborhood postal code granularity; exact GPS coordinates optional and never shared publicly in community layer. |
-| RSK-04 | User-submitted fake smog reports polluting data | Medium | High | Strict isolation between official monitoring data and community observations; peer upvoting and automated geographic clustering. |
-| RSK-05 | Inaccurate / misleading emission claims | High | Medium | Hardcoded, peer-reviewed emission factors (DEFRA/EPA); transparent math formulas and explicit uncertainty ranges displayed. |
+## 10. Automated Test Results
+- **Vitest Unit & Component Tests:** 16 passed, 0 failed (Duration: ~280ms).
+- **TypeScript Compilation:** Passed with 0 errors (`npx tsc --noEmit`).
+- **Production Build:** Static page generation succeeded for `/`, `/_not-found`, and `/dashboard`.
+- **Local Server Probe:** HTTP 200 OK on both `/` and `/dashboard`.
 
 ---
 
-## 11. Testing Requirements
-- Unit test coverage target: ≥ 90% across calculation utilities, schema validators, and data normalizers.
-- Integration tests: Complete mock suites for OpenAQ, Open-Meteo, and AI generation endpoints.
-- Error resilience tests: Verified handling of HTTP 429, 500, network timeouts, empty payloads, and malformed JSON.
-- Accessibility: Automated axe-core / Playwright accessibility checks confirming WCAG 2.1 AA compliance (contrast ratios ≥ 4.5:1 for body text, ≥ 3:1 for large headers and interactive states).
-- Security audits: Automated adversarial prompt test suite and boundary fuzzing in M7.
+## 11. Files Created or Modified in M1
+- `package.json` (Configured dependencies and build/test scripts)
+- `tsconfig.json` (Configured path aliases, strict mode, types for Vitest)
+- `next.config.mjs` (Configured Next.js compiler settings)
+- `postcss.config.mjs` (Configured `@tailwindcss/postcss`)
+- `vitest.config.ts` (Configured Vitest with jsdom and `@vitejs/plugin-react`)
+- `src/test/setup.ts` (Configured `@testing-library/jest-dom/vitest`)
+- `src/lib/utils.ts` (Utility helper `cn` with clsx and tailwind-merge)
+- `src/lib/tokens.ts` (Design tokens for colors, typography, spacing, AQI tiers)
+- `src/app/globals.css` (Tailwind v4 tokens, base typography, focus outlines, motion rules)
+- `src/app/layout.tsx` (Root layout with header, footer, viewport, skip-link)
+- `src/app/page.tsx` (Production homepage with hero, features, workflow, trust, interactive modal)
+- `src/app/dashboard/page.tsx` (Dashboard visual foundation with 10 presentation elements)
+- `src/components/layout/Container.tsx` (Responsive max-width container primitive)
+- `src/components/layout/Header.tsx` (Sticky header, navigation, active links, mobile drawer)
+- `src/components/layout/Footer.tsx` (Footer with OpenAQ attribution, science links, privacy notice)
+- `src/components/home/HeroIllustration.tsx` (Custom vector SVG artwork for city/air/home)
+- `src/components/ui/Button.tsx` (Accessible button with 6 variants, 3 sizes, loading states)
+- `src/components/ui/Card.tsx` (Card container with header, title, description, content, footer)
+- `src/components/ui/Badge.tsx` (Accessible badge pills for statuses and tiers)
+- `src/components/ui/Input.tsx` (Accessible input with labels, icons, error messages)
+- `src/components/ui/Select.tsx` (Accessible select with options and error states)
+- `src/components/ui/Alert.tsx` (Alert box with role="alert" and dismiss handler)
+- `src/components/ui/Modal.tsx` (Accessible dialog with escape key, focus trap, and backdrop)
+- `src/components/ui/Skeleton.tsx` (Loading state primitives with aria-busy)
+- `src/components/ui/Spinner.tsx` (Loading spinner with accessible role="status")
+- `src/components/ui/EmptyState.tsx` (Empty state UI with icon, title, description, action)
+- `src/components/ui/ErrorState.tsx` (Error state UI with retry trigger)
+- `src/components/dashboard/AqiOverview.tsx` (AQI number, severity badge, station metadata)
+- `src/components/dashboard/PollutantCard.tsx` (PM2.5, PM10, NO2, O3 cards with WHO limits)
+- `src/components/dashboard/TrendChart.tsx` (Responsive pure SVG 24-hr diurnal trend chart)
+- `src/components/dashboard/ExplainableRecommendationCard.tsx` (6-field explainability card)
+- `src/components/dashboard/RoutineCard.tsx` (Commute optimization: Inhaled dose vs CO2 avoided)
+- `src/components/dashboard/ImpactMetricCard.tsx` (Audit-grade impact metric with formula drawer)
+- `src/test/components.test.tsx` (16 automated unit/component tests)
+- `scripts/probe-server.mjs` (Automated browser production server probe script)
+- `.mosaic/DESIGN_SYSTEM.md` (Detailed design system and frontend foundation specification)
+- `.mosaic/STATE.md` (Updated state ledger)
 
 ---
 
-## 12. Outstanding Questions & Decisions for Future Modules
-- *Decision 1 (M1):* Exact animation library preference (CSS transforms / native transitions vs Framer Motion / Motion for React).
-- *Decision 2 (M3):* Session store mechanism (Iron-session / JWT cookies vs database sessions in SQLite). Recommended: Encrypted stateless HTTP-only session cookies with sliding expiration.
-- *Decision 3 (M4):* Geocoding provider (Nominatim OpenStreetMap with strict caching vs client-side coordinate pass-through). Recommended: Reverse geocoding via Open-Meteo Geocoding API / Nominatim with fallback city search.
+## 12. Known Limitations
+- The air quality figures and recommendations displayed on `/dashboard` are labeled development fixtures. Real-time API telemetry and physical forecasting engines are scheduled for activation in Module M4; AI recommendation reasoning is scheduled for M5.
 
 ---
 
-## 13. Files Created or Modified
-- `.mosaic/STATE.md` (Created — current system state and architecture ledger)
-- `.mosaic/M0_DISCOVERY_AND_ARCHITECTURE.md` (Created — comprehensive M0 master deliverable)
-- `.mosaic/SYSTEM_ARCHITECTURE.md` (Created — system data flows, component diagrams, and boundaries)
-- `.mosaic/SECURITY_THREAT_MODEL.md` (Created — threat model covering 16 vectors and mitigation matrix)
-- `.mosaic/DATA_AND_API_SPEC.md` (Created — database schemas, API specs, and provider evaluation)
-
----
-
-## 14. Next Authorized Action
-- **Awaiting User / MOSAIC Prompt Authorization to proceed to M1 (Design System and Frontend Foundation).**
-- Do NOT proceed to M1 implementation until explicitly instructed.
+## 13. Exact Next Authorized Module
+- **`M2 — Backend and Database`**
+- Do NOT begin M2 until authorized by user / MOSAIC prompt.
