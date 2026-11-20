@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   const clientIp = getClientIp(req);
   const rateLimit = checkRateLimit(`aqi_${clientIp}`, 60, 60_000);
   if (!rateLimit.allowed) {
-    return apiError('RATE_LIMIT_EXCEEDED', 'Too many air quality queries.', 429);
+    return apiError('RATE_LIMIT_EXCEEDED', 'Too many air quality queries. Please wait a moment.', 429);
   }
 
   try {
@@ -19,38 +19,47 @@ export async function GET(req: NextRequest) {
       city: searchParams.get('city') || undefined,
     });
 
-    // In M2: Checks stored database snapshot cache. Live OpenAQ/Copernicus API integration activates in M4.
-    const snapshot = await airQualityService.getLatestSnapshot(parsed.lat, parsed.lon);
+    const result = await airQualityService.getAirQuality(parsed.lat, parsed.lon, parsed.city);
 
-    if (snapshot) {
+    if (result.status === 'NO_NEARBY_STATION') {
       return apiSuccess({
+        status: 'NO_NEARBY_STATION',
         isLiveExternalFeed: false,
-        source: snapshot.sourceProvider,
-        stationName: snapshot.stationName,
-        aqi: snapshot.aqiValue,
-        category: snapshot.aqiCategory,
-        dominantPollutant: snapshot.dominantPollutant,
-        pollutants: {
-          pm25: { value: snapshot.pm25, unit: 'µg/m³' },
-          pm10: { value: snapshot.pm10, unit: 'µg/m³' },
-          no2: { value: snapshot.no2, unit: 'µg/m³' },
-          o3: { value: snapshot.o3, unit: 'µg/m³' },
+        notice: result.notice,
+        requestedCoordinates: {
+          latitude: parsed.lat,
+          longitude: parsed.lon,
         },
-        measurementTimestamp: snapshot.measurementTimestamp,
-        isStale: snapshot.isStale,
-        provenanceNotice: 'Retrieved from verified local atmospheric telemetry cache.',
+        station: null,
+        cpcbAqi: null,
       });
     }
 
-    // Default architectural contract when no snapshot is cached
+    if (result.status === 'PROVIDER_ERROR' && !result.data) {
+      return apiError('PROVIDER_UNAVAILABLE', result.notice || 'Air quality upstream telemetry is unavailable.', 503);
+    }
+
+    const d = result.data!;
     return apiSuccess({
-      isLiveExternalFeed: false,
-      notice: 'Live multi-provider atmospheric telemetry integration activates in Module M4 (OpenAQ v3 & Copernicus CAMS).',
-      requestedCoordinates: {
-        latitude: parsed.lat,
-        longitude: parsed.lon,
+      status: 'SUCCESS',
+      isLiveExternalFeed: d.attribution?.isLiveFeed ?? false,
+      source: d.attribution?.provider,
+      stationName: d.station?.name,
+      aqi: d.cpcbAqi?.aqi,
+      category: d.cpcbAqi?.category,
+      dominantPollutant: d.cpcbAqi?.dominantPollutant,
+      pollutants: {
+        pm25: { value: d.measurements['PM2.5']?.normalizedValue ?? null, unit: 'µg/m³' },
+        pm10: { value: d.measurements['PM10']?.normalizedValue ?? null, unit: 'µg/m³' },
+        no2: { value: d.measurements['NO2']?.normalizedValue ?? null, unit: 'µg/m³' },
+        o3: { value: d.measurements['O3']?.normalizedValue ?? null, unit: 'µg/m³' },
+        so2: { value: d.measurements['SO2']?.normalizedValue ?? null, unit: 'µg/m³' },
+        co: { value: d.measurements['CO']?.normalizedValue ?? null, unit: 'mg/m³' },
+        nh3: { value: d.measurements['NH3']?.normalizedValue ?? null, unit: 'µg/m³' },
+        pb: { value: d.measurements['Pb']?.normalizedValue ?? null, unit: 'µg/m³' },
       },
-      contractStatus: 'READY_FOR_M4_INTEGRATION',
+      ...d,
+      notice: result.notice,
     });
   } catch (error) {
     return handleApiError(error, 'GET /api/aqi');

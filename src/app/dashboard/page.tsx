@@ -13,6 +13,7 @@ import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { AirQualityRadar } from '@/components/dashboard/AirQualityRadar';
 import {
   Wind,
   ShieldCheck,
@@ -488,50 +489,12 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Air Quality Telemetry Status (Honest M3 Boundary Disclosure) */}
-            <Card className="bg-white border-[#E2E8DE]">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Wind className="w-5 h-5 text-[#397A55]" />
-                    <CardTitle className="text-lg">Atmospheric Telemetry Radar</CardTitle>
-                  </div>
-                  <Badge variant="secondary" size="sm">
-                    M4 Engine Deferred
-                  </Badge>
-                </div>
-                <CardDescription>
-                  Verified real-time atmospheric station data from SQLite telemetry cache.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {aqiCache?.isLiveExternalFeed === false && aqiCache?.aqi ? (
-                  <div className="p-4 bg-[#F7F8F3] rounded-lg space-y-2 border border-[#E2E8DE]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold text-[#27352D]">{aqiCache.stationName || 'Regional Telemetry Cache'}</span>
-                      <Badge variant="accent" size="sm">AQI {aqiCache.aqi} — {aqiCache.category}</Badge>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-xs">
-                      <div className="p-2 bg-white rounded border border-[#E2E8DE]">PM2.5: {aqiCache.pollutants?.pm25?.value} µg/m³</div>
-                      <div className="p-2 bg-white rounded border border-[#E2E8DE]">PM10: {aqiCache.pollutants?.pm10?.value} µg/m³</div>
-                      <div className="p-2 bg-white rounded border border-[#E2E8DE]">NO2: {aqiCache.pollutants?.no2?.value} µg/m³</div>
-                      <div className="p-2 bg-white rounded border border-[#E2E8DE]">Dominant: {aqiCache.dominantPollutant}</div>
-                    </div>
-                    <p className="text-[11px] text-[#68766C] pt-1">
-                      {aqiCache.provenanceNotice || 'Cached atmospheric record.'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="p-6 text-center bg-[#EEF3EA] rounded-lg space-y-2 border border-[#E2E8DE]">
-                    <MapPin className="w-6 h-6 text-[#397A55] mx-auto" />
-                    <h4 className="text-sm font-bold text-[#27352D]">Ready for Module M4 Telemetry Integration</h4>
-                    <p className="text-xs text-[#68766C] max-w-lg mx-auto">
-                      Live OpenAQ v3, Copernicus CAMS dispersion modeling, and CPCB government sensor pipelines will activate in Module M4. BreatheWise AI never displays fabricated mock AQI numbers.
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {/* Air Quality Telemetry & CPCB Intelligence Radar (M4 Activated) */}
+            <AirQualityRadar
+              householdLat={(household?.profile as any)?.latitude}
+              householdLon={(household?.profile as any)?.longitude}
+              householdCity={household?.profile?.city}
+            />
           </div>
         )}
 

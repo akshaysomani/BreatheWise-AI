@@ -131,6 +131,12 @@ model AirQualitySnapshot {
   pm10                 Float?   // µg/m³
   no2                  Float?   // µg/m³
   o3                   Float?   // µg/m³
+  so2                  Float?   // µg/m³
+  co                   Float?   // mg/m³
+  nh3                  Float?   // µg/m³
+  pb                   Float?   // µg/m³
+  distanceKm           Float?
+  rawBreakdownJson     String?
 
   measurementTimestamp DateTime
   fetchedAt            DateTime @default(now())

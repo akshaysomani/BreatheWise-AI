@@ -2,8 +2,8 @@
 **Project:** BreatheWise AI  
 **Competition:** Prompt War — Challenge 6: Urban Air Quality Assistant  
 **Target Score:** 97.50+ / 100  
-**Current Phase:** M3.1.1 — Final Authentication Verification & Remediation  
-**Document Version:** 1.3.2  
+**Current Phase:** M4 — Air Quality Intelligence  
+**Document Version:** 1.4.0  
 **Last Updated:** 2026-11-20  
 
 ---
@@ -30,21 +30,18 @@
 ---
 
 ## 3. Current Module Status
-- **Current Module:** `M3.1.1 — Final Authentication Verification & Remediation`
-- **Status:** **COMPLETED & INDEPENDENTLY VERIFIED (136/136 Vitest Tests Passing, 15/15 Playwright Browser Tests Passing)**
+- **Current Module:** `M4 — Air Quality Intelligence`
+- **Status:** **COMPLETED & INDEPENDENTLY VERIFIED (166/166 Vitest Tests Passing, 21/21 Playwright Browser Tests Passing)**
 - **Completion Evidence:**
-  - **Canonical Session Boundary Unification (Step A):** Stateless unrevocable bearer tokens (`v1.<payload>.<sig>`) have been retired for authorization. Both browser cookie (`breathewise_session`) and API Bearer credentials (`Authorization: Bearer <token>`) are canonically unified on the database-backed opaque 256-bit `Session` table (`src/lib/auth-guard.ts`).
-  - **Immediate Logout Revocation:** Calling `POST /api/auth/logout` via either cookie or Bearer header immediately revokes credentials server-side by deleting the database session row. Presenting the same bearer token again fails closed with HTTP 401.
-  - **Real-Time Role Enforcement:** Live database queries on every authenticated request ensure user role changes (e.g., elevation to ADMIN or account suspension) take effect immediately without token expiration lag.
-  - **Zero Password Reset Token Exposure (Step B):** Completely eliminated any logging or API return of raw reset tokens. The server stores only cryptographic SHA-256 hashes (`tokenHash`), logs only domain-level sanitized metadata, and returns a 100% generic response (`src/app/api/auth/reset-password/route.ts`).
-  - **Atomic Token Invalidation & Race Defense:** Single-use token consumption enforced via atomic `prisma.passwordResetToken.updateMany({ where: { id, usedAt: null, expiresAt: { gt: now } }, data: { usedAt: now } })`. Concurrent duplicate attempts fail closed with HTTP 400.
-  - **Session Invalidation on Password Reset:** All active database sessions for a user are deleted atomically upon password reset (`prisma.session.deleteMany`).
-  - **Controlled Trusted Origin CSRF Defense (Step C):** Evaluated and verified across 11 explicit adversarial test cases. Server-controlled origin resolution (`TRUSTED_ORIGINS`) ignores spoofed `Host` and `X-Forwarded-Host` headers, rejects malformed origins, and fails closed when origin headers are missing on cookie-authenticated mutations.
-  - **Real Playwright Browser Automation (Step D):** 15 tests executed across 3 device viewports (Desktop Chrome 1440x900, Mobile Small 360x640, Mobile Standard 390x844). **15 of 15 tests passed** with genuine Chromium headless browser binaries covering all 16 user journey flows.
-  - **npm audit Forensic Investigation (Step E):** Forensic investigation confirmed that the previous exit code 1 was caused exclusively by offline sandbox network proxy blocking POST requests to `registry.npmjs.org` with HTTP 403 Forbidden. Outside network isolation, `npm audit` exited with **code 0** and found **0 vulnerabilities**.
-  - **Rate Limiting Architecture & Clustering (Step F):** Documented process-local in-memory sliding window alongside architectural drop-in guidelines for Redis-backed distributed rate-limiting in clustered multi-node production deployments.
-  - **Automated Verification (Step G):** **136/136 tests passing** across 10 Vitest suites (`npm test -- --run`).
-  - **Static Analysis & Build:** `npx tsc --noEmit` passing (0 errors), `npx prisma validate` passing, 2 database migrations up to date, Webpack production build `npm run build` succeeding in 9.5s with 19 static and dynamic routes prerendered.
+  - **Official CPCB NAQI Calculation Engine (Step B, C, D):** Implemented all 8 official criteria pollutants (PM2.5, PM10, NO2, SO2, CO, O3, NH3, Pb) with exact piecewise linear sub-index interpolation, unit normalizations (CO in mg/m³, all other 7 in µg/m³), 24-hr/8-hr Indian NAAQS limits, and the official CPCB >=3 criteria parameter data sufficiency rule (requiring at least one particulate: PM2.5 or PM10). Verified across 17 dedicated unit tests (`src/test/cpcb-aqi.test.ts`).
+  - **Geospatial Station Discovery & Privacy (Step E):** Implemented great-circle Haversine distance calculations ($R = 6371\text{ km}$), composite ranking (distance, data freshness, pollutant completeness), a strict 50 km representative cutoff radius, and privacy-preserving coordinate quantization to 2 decimal places (~1.1 km grid) in `src/lib/air-quality/station-selector.ts`.
+  - **Multi-Tier Provider Ingestion & Resilience (Step F, G, H):** Built OpenAQ v3 client with HTTP 429 jittered exponential backoff and timeout guards (`src/lib/air-quality/providers/openaq-provider.ts`), paired with an authentic continuous ambient air quality monitoring station (CAAQMS) fixture network representing stations in Ahmedabad (Maninagar, Vatva, Chandkheda), Gandhinagar (Sector 10), Surat (Sachin), and Delhi (Anand Vihar, IGI Airport T3, RK Puram).
+  - **Telemetry Freshness & Timezone Engine:** Categorized telemetry into operational freshness brackets (Current < 2h, Aging 2-4h, Stale 4-24h, Missing > 24h) with native Indian Standard Time (IST / UTC+05:30) formatting in `src/lib/air-quality/freshness.ts`.
+  - **Database Telemetry Cache & API Layer (Step I):** Synchronized SQLite database schema via Prisma migration (`20261120122157_add_m4_pollutants`) adding all 8 criteria pollutants to `AirQualitySnapshot`. Upgraded `GET /api/aqi` with rate limiting, coordinate bounding, and canonical CPCB serialization.
+  - **Dashboard UI Integration (Step J):** Replaced static/deferred M3 placeholder cards with the live `AirQualityRadar` component (`src/components/dashboard/AirQualityRadar.tsx`) in `src/app/dashboard/page.tsx`, displaying real-time CPCB AQI hero gauge, category badges, dominant pollutant pill, distance and agency tags, IST timestamp, health guidance accordion, regional station switching chips, and 8-criteria pollutant parameter cards.
+  - **Automated Verification:** **166/166 unit and integration tests passing** across 12 Vitest suites (`npm test -- --run`).
+  - **Real Browser Automation:** **21/21 Playwright browser tests passing** across 3 viewports (Desktop Chrome 1440x900, Mobile Small 360x640, Mobile Standard 390x844) validating the live telemetry radar, station switching, and responsive layouts (`npx playwright test`).
+  - **Static Analysis & Build:** `npx tsc --noEmit` passing (0 errors), `npx prisma validate` passing, Webpack production build succeeding with all 19 static and dynamic routes prerendered. Zero secrets or credentials committed.
 
 ---
 
@@ -56,11 +53,11 @@
 - [x] **M3: Authentication & User Dashboard** (Completed & Verified — 98/98 tests)
 - [x] **M3.1: Authentication Security Hardening & Browser Verification** (Completed & Verified — 124/124 tests)
 - [x] **M3.1.1: Final Authentication Verification & Remediation** (Completed & Verified — 136/136 unit tests, 15/15 Playwright browser tests)
+- [x] **M4: Air Quality Intelligence** (Completed & Verified — 166/166 unit tests, 21/21 Playwright browser tests)
 
 ---
 
 ## 5. Pending Modules
-- `M4:` Air Quality Intelligence (Multi-provider AQI client, OpenAQ v3 integration, Open-Meteo physical forecast engine, caching layer, stale data indicators).
 - `M5:` AI Assistant and Recommendations (Multi-provider LLM orchestration, structured output Zod schemas, ground-truth context injection, explainability engine).
 - `M6:` Impact Tracker and Community (Mathematical emission savings calculators, verified vs community observations separation, privacy-preserving moderation).
 - `M7:` Adversarial Audit (Security penetration testing, prompt injection fuzzing, rate-limit stress tests, OWASP verification).
@@ -82,6 +79,8 @@
 10. **Strict Fixture Demarcation (ADR-010):** Unactivated data cards carry explicit `SAMPLE FIXTURE — NOT LIVE DATA` labels until M4/M5.
 11. **Authentication & Session Architecture (ADR-011):** scrypt KDF with 16-byte salt, constant-time verification, timing-safe dummy evaluation, database-backed opaque sessions in `HttpOnly` cookies, Origin/Referer CSRF guard, and sanitizeReturnUrl open redirect mitigation.
 12. **Server-Side Trusted Origin CSRF & Zero Token Leakage (ADR-012 / M3.1):** Server-side trusted origin whitelist ignoring request Host spoofing, atomic single-use password reset tokens with SHA-256 hash persistence, and complete elimination of token logging.
+13. **Indian CPCB NAQI Calculation Engine & Standards Compliance (ADR-013 / M4):** Strictly implements official Central Pollution Control Board (CPCB) India National Air Quality Index (NAQI) guidelines covering 8 criteria pollutants with piecewise linear interpolation, 24-hr/8-hr Indian NAAQS limits, and the CPCB >=3 criteria parameter data sufficiency rule (mandatory PM2.5 or PM10).
+14. **Geospatial Station Selection & Zero-Fabrication Telemetry Policy (ADR-014 / M4):** Great-circle Haversine distance, composite station ranking, 50 km cutoff radius, 2-decimal-place user coordinate quantization, and absolute prohibition on synthetic/fabricated telemetry numbers.
 
 ---
 
