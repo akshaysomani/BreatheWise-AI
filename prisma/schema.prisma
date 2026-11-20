@@ -27,6 +27,8 @@ model User {
   recommendationRecords RecommendationRecord[]
   sessions              Session[]
   passwordResetTokens   PasswordResetToken[]
+  conversations         Conversation[]
+  feedbacks             RecommendationFeedback[]
 
   @@index([email])
 }
@@ -252,7 +254,56 @@ model RecommendationRecord {
   implementationSteps       String   // Stored as serialized JSON string array
   disclaimer                String
 
+  feedbacks                 RecommendationFeedback[]
+
   createdAt                 DateTime @default(now())
 
   @@index([userId, category])
+}
+
+// ----------------------------------------------------
+// 8. AI Assistant Conversations & Messages (M5)
+// ----------------------------------------------------
+
+model Conversation {
+  id        String                @id @default(uuid())
+  userId    String
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String                @default("Environmental Consultation")
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  messages  ConversationMessage[]
+
+  @@index([userId, updatedAt])
+}
+
+model ConversationMessage {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String       // "USER" | "ASSISTANT" | "SYSTEM"
+  content        String       // Message text or serialized response
+  metadataJson   String?      // Optional structured JSON metadata (context, citations, recommendation IDs)
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// ----------------------------------------------------
+// 9. Recommendation Feedback & Transparency (M5)
+// ----------------------------------------------------
+
+model RecommendationFeedback {
+  id               String                @id @default(uuid())
+  userId           String
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recommendationId String?
+  recommendation   RecommendationRecord? @relation(fields: [recommendationId], references: [id], onDelete: SetNull)
+  isHelpful        Boolean
+  feedbackReason   String?
+  createdAt        DateTime              @default(now())
+
+  @@index([userId])
+  @@index([recommendationId])
 }

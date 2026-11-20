@@ -2,8 +2,8 @@
 **Project:** BreatheWise AI  
 **Competition:** Prompt War — Challenge 6: Urban Air Quality Assistant  
 **Target Score:** 97.50+ / 100  
-**Current Phase:** Module 4 CLOSED — Air Quality Intelligence Formally Closed  
-**Document Version:** 1.5.0  
+**Current Phase:** Module 5 COMPLETED & VERIFIED — AI Assistant & Intelligent Recommendations Formally Closed  
+**Document Version:** 1.6.0  
 **Last Updated:** 2026-11-20  
 
 ---
@@ -30,19 +30,23 @@
 ---
 
 ## 3. Current Module Status
-- **Current Module:** `Module 4 — Air Quality Intelligence (Final Closure)`
-- **Status:** **COMPLETED, INDEPENDENTLY AUDITED & FORMALLY CLOSED (228/228 Vitest Tests Passing, 24/24 Playwright Browser Tests Passing)**
+- **Current Module:** `Module 5 — AI Assistant & Intelligent Recommendations`
+- **Status:** **COMPLETED, FULLY INTEGRATED & VERIFIED (255/255 Vitest Tests Passing, 33/33 Playwright Browser Tests Passing)**
 - **Completion Evidence:**
-  - **Correction of CPCB 16-Hour Data Completeness Rule:** Authoritative CPCB guidelines (*"How is AQI calculated?"*, CPCB 2014–2015) state: *"A minimum of 16 hours' data is considered necessary for calculating sub-index."* Removed unsupported claims requiring "continuous" or consecutive hours. The engine strictly requires and accepts $\ge 16$ distinct valid observation hours in the 24-hour cycle (non-continuous data accepted).
-  - **Correction of CO and O3 Averaging Methodology:** Rigorously separated the statutory 16h/24h cycle rule from the BreatheWise engineering safeguard ($\ge 6$ of 8 hours / 75% completeness in active running window $[h_{\text{asOf}} - 7, h_{\text{asOf}}]$). Verified behavior across 8, 7, 6, 5, 4, 3, 2, 1, 0 hours, with missing observations at beginning, middle, and end of the window.
-  - **Hourly Binning & Sample Deduplication:** Multiple observations or duplicate timestamps within the same hour bucket are averaged into 1 hourly bin and count as exactly 1 valid observation hour, preventing artificial inflation of data coverage.
-  - **Station Isolation & Physical Boundary Checks:** Station-level segregation (`targetStationId`) preventing cross-station contamination. Documented physical operating ranges and plausibility ceilings (`PHYSICAL_CONCENTRATION_LIMITS`) for all 8 criteria pollutants, and 5-minute future clock drift tolerance policy (`FUTURE_TOLERANCE_MS`).
-  - **Granular Completeness Audit Model (`PollutantCompletenessAudit`):** Fully typed inspection structure capturing `averagingPeriodHours`, `observationWindowHours`, `validObservationCount`, `validObservationHours`, `activeWindowHours`, `activeWindowObservationHours`, `activeWindowThresholdHours`, `engineeringSafeguardSatisfied`, `isSubIndexEligible`, `concentration`, `unit`, `subIndex`, and `rejectionReason`.
-  - **UI Regulatory Card Alignment (`AirQualityRadar.tsx`):** Aligned header title to **"CPCB National AQI:"** and updated explanatory copy to clearly disclose 24h averages for PM/gases and 8h running averages for CO/O3.
-  - **Automated Verification:** **228/228 unit and integration tests passing** across 15 Vitest test suites (`npx vitest run`).
-  - **Browser Automation:** **24/24 Playwright tests passing** across Desktop Chrome (1440x900), Mobile Small (360x640), and Mobile Standard (390x844).
-  - **Static Analysis & Build:** `npx tsc --noEmit` passing with 0 errors; Next.js Webpack production build succeeding with all 19 routes prerendered.
-- **Next Phase:** Module 5 — AI Assistant & Recommendations (Awaiting user authorization; strictly NOT started).
+  - **Five Connected M5 Capabilities Delivered:**
+    1. *BreatheWise AI Assistant:* Conversational environmental intelligence grounded in real-time verified CPCB telemetry and user household risk profiles.
+    2. *Personalized Daily Routine Generator:* Diurnal phase breakdown (Morning 06:00–11:00, Afternoon 12:00–17:00, Evening 18:00–23:00) with activity windows and travel exposure avoidance.
+    3. *Indoor Air Quality (IAQ) Advisor:* EPA 5.0 ACH CADR room sizing calculator, clean-air delivery deficit warnings, source control protocols, and scientific debunking of houseplant air-purification myths.
+    4. *Family-Aware Health-Protection Guidance:* Vulnerability stratification (infants, asthmatics, elderly, cardiovascular disease), severe smog triage (112 hotline guidance), and certified N95/N99 respirator guidance.
+    5. *Sustainable Lifestyle & Commute Guidance:* Mode shift emissions vs. acute exposure trade-offs with strict health-first prioritization (never advise cycling/walking in Poor/Very Poor/Severe AQI).
+  - **6-Field Explainability Contract:** Strict Zod validation and UI rendering of `action`, `reason`, `expectedBenefit`, `measurableImpact`, `assumptions`, and `uncertainty` with collapsible scientific disclosures and feedback loops.
+  - **Server-Side Gemini Integration & Deterministic Fallback:** Dual-engine architecture with 8-second bounded execution for Google Gemini 1.5 Flash and instant deterministic fallback to a peer-reviewed scientific rules engine when unconfigured or offline.
+  - **AI Safety & Prompt Defense:** Isolated XML delimiter system boundaries (`<SYSTEM_PROMPT>`, `<ENVIRONMENTAL_EVIDENCE>`, `<USER_CONTEXT>`, `<USER_QUERY>`), delimiter breakout stripping, injection scanning, and output sanitization scrubbing HTML/scripts/eval/image tracking payloads.
+  - **Zero-Fabrication Telemetry Policy:** Real database/provider environmental observations injected into model context; honest `NO_DATA` when coordinates lack observations.
+  - **Automated Verification:** **255/255 unit, service, adversarial and integration tests passing** across 17 Vitest test suites (`npx vitest run`).
+  - **Browser Automation:** **33/33 Playwright tests passing** across Desktop Chrome (1440x900), Mobile Small (360x640), and Mobile Standard (390x844).
+  - **Static Analysis & Build:** `npx tsc --noEmit` passing with 0 errors; Next.js production build succeeding with all 24 routes prerendered.
+- **Next Phase:** Module 6 — Impact Tracker & Community Features (Awaiting user authorization; strictly NOT started).
 
 ---
 
@@ -58,11 +62,11 @@
   - [x] **M4.1: Live Provider Integration & Environmental Data Integrity Audit** (Completed & Verified)
   - [x] **M4.1.1: Scientific AQI Validation & Final Evidence Audit** (Completed & Verified)
   - [x] **M4.1.2: CPCB Averaging Rules Correction & Final Scientific Verification** (Completed & Verified)
+- [x] **M5: AI Assistant & Intelligent Recommendations** (Completed & Verified — 255/255 unit tests, 33/33 Playwright browser tests)
 
 ---
 
 ## 5. Pending Modules
-- `M5:` AI Assistant and Recommendations (Multi-provider LLM orchestration, structured output Zod schemas, ground-truth context injection, explainability engine).
 - `M6:` Impact Tracker and Community (Mathematical emission savings calculators, verified vs community observations separation, privacy-preserving moderation).
 - `M7:` Adversarial Audit (Security penetration testing, prompt injection fuzzing, rate-limit stress tests, OWASP verification).
 - `M8:` Remediation (Addressing audit findings, bug fixes, hardening, performance optimizations).
@@ -72,7 +76,7 @@
 
 ## 6. Architecture & Design Decisions
 1. **Monolithic Full-Stack Architecture (ADR-001):** Next.js 16.4.6 App Router, React 19, TypeScript.
-2. **Database Engine & ORM (ADR-002):** SQLite for deterministic local verification + Prisma ORM 6.4.1 singleton. 10 normalized models.
+2. **Database Engine & ORM (ADR-002):** SQLite for deterministic local verification + Prisma ORM 6.4.1 singleton. 12 normalized models.
 3. **Repository Pattern (ADR-003):** Strict encapsulation of Prisma queries in `src/repositories/` with ownership verification before update/delete.
 4. **Boundary Validation (ADR-004):** Centralized Zod schemas in `src/lib/validations/` with strict coordinate bounding (-90..90, -180..180) and XSS injection rejection.
 5. **Privacy by Design (ADR-005):** Geolocation coordinates quantized to 2 decimal places (~1.1 km latitude, ~0.97 km longitude at 28.6°N).
@@ -80,7 +84,7 @@
 7. **Cryptographic Session Boundary (ADR-007):** Constant-time HMAC-SHA256 session token adapter. Zero trust for client-supplied user ID headers.
 8. **Design Tokens & Brand Theme (ADR-008):** Exclusively light theme (`#397A55` Forest Green, `#F7F8F3` Alabaster).
 9. **Typography Pairing (ADR-009):** Manrope (Headings) + DM Sans (Body and figures).
-10. **Strict Fixture Demarcation (ADR-010):** Unactivated data cards carry explicit `SAMPLE FIXTURE — NOT LIVE DATA` labels until M4/M5.
+10. **Strict Fixture Demarcation (ADR-010):** Unactivated data cards carry explicit `SAMPLE FIXTURE — NOT LIVE DATA` labels until activated.
 11. **Authentication & Session Architecture (ADR-011):** scrypt KDF with 16-byte salt, constant-time verification, timing-safe dummy evaluation, database-backed opaque sessions in `HttpOnly` cookies, Origin/Referer CSRF guard, and sanitizeReturnUrl open redirect mitigation.
 12. **Server-Side Trusted Origin CSRF & Zero Token Leakage (ADR-012 / M3.1):** Server-side trusted origin whitelist ignoring request Host spoofing, atomic single-use password reset tokens with SHA-256 hash persistence, and complete elimination of token logging.
 13. **Indian CPCB NAQI Calculation Engine & Standards Compliance (ADR-013 / M4):** Strictly implements official Central Pollution Control Board (CPCB) India National Air Quality Index (NAQI) guidelines covering 8 criteria pollutants with piecewise linear interpolation, 24-hr/8-hr Indian NAAQS limits, and the CPCB >=3 criteria parameter data sufficiency rule (mandatory PM2.5 or PM10).
@@ -89,15 +93,17 @@
 16. **Four-Timestamp Model & Provenance State Machine (ADR-016 / M4.1):** Explicit tracking of observation time (physical sensor), ingestion time (BreatheWise fetch), retrieval time (client response), and cache time (database persistence). 5-state provenance classification (`LIVE`, `CACHED`, `STALE`, `MOCK`, `NO_DATA`).
 17. **Scientific AQI Decoupling & Continuous Completeness Enforcement (ADR-017 / M4.1.1):** Rigorous mathematical decoupling of official CPCB National AQI ($\ge 16$ hours data completeness required per MoEFCC protocol) from acute 1-hour sensor proxy indicators. 5-tier typed database provenance (`VERIFIED_EXTERNAL_OBSERVATION`, `HISTORICAL_IMPORTED`, `DEVELOPMENT_SEED`, `SYNTHETIC_FIXTURE`, `UNKNOWN_PROVENANCE`) with physical observation time strictly decoupled from server ingestion time.
 18. **CPCB Averaging Rules Correction & Hourly Binning Completeness (ADR-018 / M4.1.2):** Removal of unsupported "continuous" data requirement (non-continuous hourly samples with $\ge 16$ distinct valid hours satisfy CPCB standard); elimination of invented 6-hour threshold for CO and O3; implementation of 8-hour running arithmetic mean over distinct hourly bin averages in $[h_{\text{asOf}} - 7, h_{\text{asOf}}]$ with an explicit 75% ($\ge 6\text{h}$) active-window engineering safeguard; sample deduplication into hourly bins; station telemetry isolation (`targetStationId`); and comprehensive `PollutantCompletenessAudit` structure.
+19. **Explainable AI Architecture, Prompt Defense & Deterministic Fallback (ADR-019 / M5):** Implementation of an authoritative 6-field explainability contract (`action`, `reason`, `expectedBenefit`, `measurableImpact`, `assumptions`, `uncertainty`); non-overridable XML delimiter prompt boundaries (`<SYSTEM_PROMPT>`, `<ENVIRONMENTAL_EVIDENCE>`, `<USER_CONTEXT>`, `<USER_QUERY>`); output sanitizer scrubbing HTML/scripts/eval/image tracking payloads; 2-decimal coordinate quantization (~1.1km); EPA 5.0 ACH CADR room sizing engine; diurnal routine stratification (Morning, Afternoon, Evening); health-protection priority over carbon reduction during hazardous pollution; and instant fallback to a deterministic scientific rules engine on LLM errors, timeouts (8s), or missing keys.
 
 ---
 
 ## 7. Technology Stack
 - **Framework:** Next.js 16.4.6 (App Router) / React 19.0.0
 - **Language:** TypeScript 5.x / ES2022
-- **Database & ORM:** SQLite + Prisma ORM 6.4.1 (10 models: User, Session, PasswordResetToken, HouseholdProfile, HouseholdMember, AirQualitySnapshot, SavedRoutine, ImpactLog, CommunityReport, RecommendationRecord)
+- **Database & ORM:** SQLite + Prisma ORM 6.4.1 (12 models: User, Session, PasswordResetToken, HouseholdProfile, HouseholdMember, AirQualitySnapshot, SavedRoutine, ImpactLog, CommunityReport, RecommendationRecord, Conversation, ConversationMessage, RecommendationFeedback)
 - **Validation:** Zod v3.24
-- **Security:** scrypt KDF ($N=16384, r=8, p=1$), SHA-256 token hashing, opaque DB session tokens, HMAC-SHA256 token adapter, timing-safe equality, PII/health logger redaction, server-side trusted origin CSRF guard, assertNotProduction hard guard
+- **Security:** scrypt KDF ($N=16384, r=8, p=1$), SHA-256 token hashing, opaque DB session tokens, HMAC-SHA256 token adapter, timing-safe equality, PII/health logger redaction, server-side trusted origin CSRF guard, assertNotProduction hard guard, prompt boundary isolation, output sanitization
+- **AI Engine:** Google Gemini 1.5 Flash (server-side, 8s timeout, structured JSON schema) + Deterministic Peer-Reviewed Scientific Rules Engine Fallback
 - **Styling:** Tailwind CSS v4 (`@tailwindcss/postcss`)
 - **Iconography:** Lucide React
 - **Testing:** Vitest 5.1.1 + Testing Library (`@testing-library/react`, `@testing-library/jest-dom`) + Playwright E2E specification (Desktop Chrome, Mobile 360px, Mobile 390px)

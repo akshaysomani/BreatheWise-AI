@@ -14,6 +14,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { AirQualityRadar } from '@/components/dashboard/AirQualityRadar';
+import { AssistantWorkspace } from '@/components/dashboard/AssistantWorkspace';
 import {
   Wind,
   ShieldCheck,
@@ -105,7 +106,7 @@ export default function DashboardPage() {
   const [aqiCache, setAqiCache] = useState<any>(null);
 
   // Active view tab
-  const [activeTab, setActiveTab] = useState<'overview' | 'household' | 'routines' | 'impact' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'assistant' | 'household' | 'routines' | 'impact' | 'settings'>('overview');
 
   // Household Setup Form State
   const [setupModalOpen, setSetupModalOpen] = useState(false);
@@ -371,6 +372,17 @@ export default function DashboardPage() {
             Overview
           </button>
           <button
+            onClick={() => setActiveTab('assistant')}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
+              activeTab === 'assistant'
+                ? 'bg-[#397A55] text-white shadow-sm'
+                : 'text-[#27352D] hover:bg-[#EEF3EA]'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-[#D69B47]" />
+            AI Assistant
+          </button>
+          <button
             onClick={() => setActiveTab('household')}
             className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
               activeTab === 'household'
@@ -495,7 +507,41 @@ export default function DashboardPage() {
               householdLon={(household?.profile as any)?.longitude}
               householdCity={household?.profile?.city}
             />
+
+            {/* M5 AI Assistant Quick Access Banner */}
+            <div className="p-5 bg-gradient-to-r from-[#EEF3EA] to-[#F7F8F3] rounded-xl border border-[#397A55]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-[#397A55] font-bold text-xs uppercase tracking-wider">
+                  <Sparkles className="w-4 h-4 text-[#D69B47]" />
+                  AI Assistant & Daily Action Planner
+                </div>
+                <h4 className="text-base font-bold text-[#27352D] font-[var(--font-heading)]">
+                  Need personalized advice on outdoor walks, ventilation windows, or purifier sizing?
+                </h4>
+                <p className="text-xs text-[#68766C]">
+                  Our context-grounded environmental assistant converts your household profile and telemetry into 6-field explainable recommendations.
+                </p>
+              </div>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => setActiveTab('assistant')}
+                leftIcon={<Sparkles className="w-4 h-4 text-[#D69B47]" />}
+                className="shrink-0"
+              >
+                Open AI Assistant
+              </Button>
+            </div>
           </div>
+        )}
+
+        {/* Tab: AI Assistant & Recommendations (M5 Activated) */}
+        {activeTab === 'assistant' && (
+          <AssistantWorkspace
+            initialLat={(household?.profile as any)?.latitude}
+            initialLon={(household?.profile as any)?.longitude}
+            userCity={household?.profile?.city}
+          />
         )}
 
         {/* Tab 2: Household Profile & CADR */}

@@ -6,3 +6,4 @@ export * from './impact.schema';
 export * from './community.schema';
 export * from './recommendation.schema';
 export * from './auth.schema';
+export * from './assistant.schema';
