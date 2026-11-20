@@ -1,0 +1,212 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ----------------------------------------------------
+// 1. Authentication & User Management
+// ----------------------------------------------------
+
+model User {
+  id                    String                 @id @default(uuid())
+  email                 String                 @unique
+  passwordHash          String
+  name                  String?
+  role                  String                 @default("USER") // "USER" | "ADMIN"
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  household             HouseholdProfile?
+  savedRoutines         SavedRoutine[]
+  impactLogs            ImpactLog[]
+  reports               CommunityReport[]
+  recommendationRecords RecommendationRecord[]
+
+  @@index([email])
+}
+
+// ----------------------------------------------------
+// 2. Household & Environmental Sensitivity Profile
+// ----------------------------------------------------
+
+model HouseholdProfile {
+  id                 String            @id @default(uuid())
+  userId             String            @unique
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  city               String
+  neighborhood       String?
+  latitude           Float
+  longitude          Float
+
+  homeType           String            // "APARTMENT" | "STANDALONE_HOUSE" | "MULTI_STORY"
+  floorAreaSqFt      Float             // Used for HEPA CADR calculations
+  ceilingHeightFt    Float             @default(9.0)
+  hasHEPAFilter      Boolean           @default(false)
+  hepaCADR           Float?            // Clean Air Delivery Rate in CFM
+  windowSealing      String            @default("MODERATE") // "POOR" | "MODERATE" | "TIGHT"
+
+  primaryCookingFuel String            @default("LPG_GAS") // "LPG_GAS" | "ELECTRIC_INDUCTION" | "BIOMASS"
+
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  members            HouseholdMember[]
+
+  @@index([userId])
+  @@index([latitude, longitude])
+}
+
+model HouseholdMember {
+  id                 String           @id @default(uuid())
+  householdId        String
+  household          HouseholdProfile @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  nameOrAlias        String
+  ageGroup           String           // "INFANT" | "CHILD" | "ADULT" | "SENIOR"
+  hasAsthma          Boolean          @default(false)
+  hasHeartCondition  Boolean          @default(false)
+  isPregnant         Boolean          @default(false)
+  outdoorHoursPerDay Float            @default(1.0)
+
+  createdAt          DateTime         @default(now())
+
+  @@index([householdId])
+}
+
+// ----------------------------------------------------
+// 3. Environmental Telemetry & Snapshot Cache
+// ----------------------------------------------------
+
+model AirQualitySnapshot {
+  id                   String   @id @default(uuid())
+  latitude             Float
+  longitude            Float
+  stationId            String?
+  stationName          String?
+  sourceProvider       String   // "OPENAQ" | "OPEN_METEO" | "CPCB"
+
+  aqiValue             Int
+  aqiCategory          String   // "GOOD" | "MODERATE" | "UNHEALTHY_SENSITIVE" | "UNHEALTHY" | "VERY_UNHEALTHY" | "HAZARDOUS"
+  dominantPollutant    String   // "PM2.5" | "PM10" | "NO2" | "O3"
+
+  pm25                 Float?   // µg/m³
+  pm10                 Float?   // µg/m³
+  no2                  Float?   // µg/m³
+  o3                   Float?   // µg/m³
+
+  measurementTimestamp DateTime
+  fetchedAt            DateTime @default(now())
+  isStale              Boolean  @default(false)
+
+  @@index([latitude, longitude])
+  @@index([fetchedAt])
+}
+
+// ----------------------------------------------------
+// 4. Daily Routines & Commute Optimization
+// ----------------------------------------------------
+
+model SavedRoutine {
+  id                     String   @id @default(uuid())
+  userId                 String
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title                  String   // e.g. "Work Commute", "School Drop-off"
+  origin                 String
+  destination            String
+  distanceKm             Float
+  departureTime          String   // e.g. "08:30"
+  returnTime             String?  // e.g. "17:30"
+
+  baselineMode           String   // "SOLO_CAR" | "MOTORCYCLE" | "BUS" | "METRO" | "BICYCLE"
+  optimizedMode          String?
+
+  estimatedDoseReduction Float?   // % reduction in inhaled PM2.5
+  estimatedCO2SavingsKg  Float?   // kg CO2 avoided per trip
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ----------------------------------------------------
+// 5. Audit-Grade Impact Tracking
+// ----------------------------------------------------
+
+model ImpactLog {
+  id                 String   @id @default(uuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  actionType         String   // "COMMUTE_SHIFT" | "HEPA_PURIFICATION" | "VENTILATION_WINDOW" | "COOKING_SWITCH"
+  title              String
+  date               DateTime @default(now())
+
+  co2AvoidedKg       Float    // Calculated formulaic kg CO2e
+  pm25AvoidedGrams   Float    // Grams of primary PM2.5 avoided at source
+  distanceShiftedKm  Float?
+
+  calculationFormula String   // e.g. "14 km * (0.171 kg/km car - 0.035 kg/km metro)"
+  uncertaintyMargin  Float    @default(0.15) // +/- 15%
+
+  createdAt          DateTime @default(now())
+
+  @@index([userId, date])
+}
+
+// ----------------------------------------------------
+// 6. Community Observations (Strictly Isolated)
+// ----------------------------------------------------
+
+model CommunityReport {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  reportType      String   // "VISIBLE_SMOG" | "ACRID_ODOR" | "OPEN_BURNING" | "DUST_CONSTRUCTION"
+  severity        String   // "MILD" | "MODERATE" | "SEVERE"
+  description     String
+
+  // Geographically fuzzed coordinates (~1.1 km precision) to protect home privacy
+  fuzzedLatitude  Float
+  fuzzedLongitude Float
+  neighborhood    String
+
+  isOfficialData  Boolean  @default(false) // Hard architectural invariant: ALWAYS FALSE
+  upvotes         Int      @default(0)
+  status          String   @default("ACTIVE") // "ACTIVE" | "RESOLVED" | "FLAGGED"
+
+  createdAt       DateTime @default(now())
+
+  @@index([fuzzedLatitude, fuzzedLongitude])
+  @@index([userId])
+}
+
+// ----------------------------------------------------
+// 7. Structured Recommendation Contracts Foundation (M0/M2)
+// ----------------------------------------------------
+
+model RecommendationRecord {
+  id                        String   @id @default(uuid())
+  userId                    String?
+  user                      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  category                  String   // "DAILY_ROUTINE" | "INDOOR_PURIFICATION" | "COMMUTE_PLAN" | "SUSTAINABLE_ALTERNATIVE"
+  recommendedAction         String
+  scientificReason          String
+  expectedBenefit           String
+  quantifiedImpact          String?
+  assumptionsAndUncertainty String
+  implementationSteps       String   // Stored as serialized JSON string array
+  disclaimer                String
+
+  createdAt                 DateTime @default(now())
+
+  @@index([userId, category])
+}

@@ -2,8 +2,8 @@
 **Project:** BreatheWise AI  
 **Competition:** Prompt War — Challenge 6: Urban Air Quality Assistant  
 **Target Score:** 97.50+ / 100  
-**Current Phase:** M1 — Design System & Frontend Foundation  
-**Document Version:** 1.1.0  
+**Current Phase:** M2 — Backend & Database  
+**Document Version:** 1.2.0  
 **Last Updated:** 2026-11-20  
 
 ---
@@ -30,28 +30,30 @@
 ---
 
 ## 3. Current Module Status
-- **Current Module:** `M1 — Design System & Frontend Foundation`
-- **Status:** **COMPLETED & VERIFIED**
+- **Current Module:** `M2 — Backend & Database`
+- **Status:** **COMPLETED & VERIFIED (52/52 Tests Passing)**
 - **Completion Evidence:**
-  - Full design system implemented with exact brand tokens and Manrope + DM Sans typography pairing.
-  - Reusable accessible component library built (`Button`, `Card`, `Badge`, `Input`, `Select`, `Alert`, `Modal`, `Skeleton`, `Spinner`, `EmptyState`, `ErrorState`).
-  - Production-grade Homepage implemented with working navigation, custom SVG hero, 6 feature cards, 4-step workflow, trust section, and interactive household sensitivity planner.
-  - Dashboard visual foundation implemented with 10 presentation elements (AQI radar, pollutant cards, 24-hr diurnal trend chart, 6-field recommendation cards, routine cards, and impact formula drawers).
-  - 16/16 Vitest unit and component tests passing.
-  - TypeScript type checking: 0 errors (`npx tsc --noEmit`).
-  - Next.js production build (`npm run build`): Static export succeeded with 0 errors.
-  - Real browser production server probe on port 3005: HTTP 200 OK for both `/` and `/dashboard`.
+  - Complete normalized relational schema with 7 models in `prisma/schema.prisma` (`User`, `HouseholdProfile`, `HouseholdMember`, `AirQualitySnapshot`, `SavedRoutine`, `ImpactLog`, `CommunityReport`, `RecommendationRecord`).
+  - SQLite database initialized and migrated (`20261120100156_init`) with deterministic seed script `prisma/seed.mjs`.
+  - Type-safe data access layer implemented with repositories in `src/repositories/`.
+  - Scientific domain services in `src/services/` for ASHRAE HEPA CADR sizing (5.0 ACH), DEFRA commute emissions avoidance, EPA AQI breakpoint conversion, and privacy centroid fuzzing (2 decimal places / ~1.1 km).
+  - Centralized defensive Zod validation schemas in `src/lib/validations/` with strict coordinate bounding (-90..90, -180..180) and XSS injection rejection.
+  - Complete API route suite in `src/app/api/` (`/api/health`, `/api/location/coordinates`, `/api/household`, `/api/aqi`, `/api/routines`, `/api/impact`, `/api/community/reports`, `/api/recommendations`).
+  - Defensive security guards implemented: sliding-window rate limiter (`src/lib/rate-limiter.ts`), authentication boundary guard (`src/lib/auth-guard.ts`), credential-redacting logger (`src/lib/logger.ts`), and sanitized API envelope handlers (`src/lib/api-response.ts`).
+  - 52/52 Vitest automated tests passing across 5 suites (100% pass rate).
+  - TypeScript compilation: 0 errors (`npx tsc --noEmit`).
+  - Production build: Successfully compiled via `next build --webpack` with external Prisma package configuration.
 
 ---
 
 ## 4. Completed Modules
 - [x] **M0: Discovery & Architecture** (Approved & Verified)
 - [x] **M1: Design System & Frontend Foundation** (Completed & Verified)
+- [x] **M2: Backend & Database** (Completed & Verified — 52/52 tests)
 
 ---
 
 ## 5. Pending Modules
-- `M2:` Backend and Database (Prisma/SQLite schema, repositories, Zod validation layer, seed data, health checks).
 - `M3:` Authentication and Dashboard (Secure session management, household profile management, role-based controls, dashboard shell).
 - `M4:` Air Quality Intelligence (Multi-provider AQI client, OpenAQ v3 integration, Open-Meteo physical forecast engine, caching layer, stale data indicators).
 - `M5:` AI Assistant and Recommendations (Multi-provider LLM orchestration, structured output Zod schemas, ground-truth context injection, explainability engine).
@@ -64,20 +66,26 @@
 
 ## 6. Architecture & Design Decisions
 1. **Monolithic Full-Stack Architecture (ADR-001):** Next.js 16.4.6 App Router, React 19, TypeScript.
-2. **Design Tokens & Brand Theme (ADR-007):** Exclusively light theme. Primary `#397A55`, Primary Hover `#2F6647`, Secondary `#718C72`, Accent `#D69B47`, Background `#F7F8F3`, Surface `#FFFFFF`, Surface Secondary `#EEF3EA`, Border `#E2E8DE`, Text `#27352D`, Muted `#68766C`, Success `#287A4B`, Warning `#A86B16`, Error `#B8423D`.
-3. **Typography Pairing (ADR-008):** Manrope (Headings) + DM Sans (Body and tabular figures). Replaced Inter and Poppins per competition guidelines.
-4. **Custom Vector SVG Hero (ADR-009):** Custom-coded vector illustration depicting clean air circulation, city silhouette, and HEPA-protected home. Zero stock images or unverified statistics.
-5. **Strict Sample Fixture Demarcation (ADR-010):** All dashboard cards in M1 carry explicit `SAMPLE FIXTURE — NOT LIVE DATA` indicators to guarantee scientific integrity before M4 API activation.
+2. **Database Engine & ORM (ADR-002):** SQLite for deterministic zero-dependency local development + Prisma ORM 6.4.1 singleton. Prepared for seamless Postgres switch via environment connection string.
+3. **Repository Pattern (ADR-003):** Strict encapsulation of Prisma queries in `src/repositories/` to enforce business logic separation and testability.
+4. **Boundary Validation (ADR-004):** Centralized Zod schemas in `src/lib/validations/` executed before any service or database call.
+5. **Privacy by Design (ADR-005):** Geolocation coordinates fuzzed to 2 decimal places (~1.1 km) before storage/display for community reports.
+6. **Community Data Demarcation (ADR-006):** Invariant flag `isOfficialData: false` enforced on all citizen-submitted observations.
+7. **Design Tokens & Brand Theme (ADR-007):** Exclusively light theme. Primary `#397A55`, Primary Hover `#2F6647`, Secondary `#718C72`, Accent `#D69B47`, Background `#F7F8F3`, Surface `#FFFFFF`, Surface Secondary `#EEF3EA`, Border `#E2E8DE`, Text `#27352D`, Muted `#68766C`, Success `#287A4B`, Warning `#A86B16`, Error `#B8423D`.
+8. **Typography Pairing (ADR-008):** Manrope (Headings) + DM Sans (Body and tabular figures).
+9. **Custom Vector SVG Hero (ADR-009):** Custom-coded vector illustration depicting clean air circulation, city silhouette, and HEPA-protected home.
+10. **Strict Sample Fixture Demarcation (ADR-010):** All dashboard cards in M1 carry explicit `SAMPLE FIXTURE — NOT LIVE DATA` indicators to guarantee scientific integrity before M4 API activation.
 
 ---
 
 ## 7. Technology Stack
-- **Framework:** Next.js 16.4.6 (App Router, Turbopack) / React 19.0.0
+- **Framework:** Next.js 16.4.6 (App Router) / React 19.0.0
 - **Language:** TypeScript 5.x / ES2022
+- **Database & ORM:** SQLite + Prisma ORM 6.4.1
+- **Validation:** Zod v3.24
 - **Styling:** Tailwind CSS v4 (`@tailwindcss/postcss`) with CSS custom properties
 - **Iconography:** Lucide React (vector only)
 - **Testing:** Vitest 5.1.1 + Testing Library (`@testing-library/react`, `@testing-library/jest-dom`)
-- **Database:** SQLite + Prisma ORM (designed in M0, scheduled for M2 implementation)
 
 ---
 
@@ -87,73 +95,83 @@
 - `design` (`C:\Users\Akshay\.agents\skills\design\SKILL.md`): **VERIFIED & READ**
 - `ui-styling` (`C:\Users\Akshay\.agents\skills\ui-styling\SKILL.md`): **VERIFIED & READ**
 - `ui-ux-pro-max` (`C:\Users\Akshay\.agents\skills\ui-ux-pro-max\SKILL.md`): **VERIFIED & READ**
-- `impeccable` (`C:\Users\Akshay\.agents\skills\impeccable\SKILL.md`): **VERIFIED & READ**
+- `impeccable` (`C:\Users\Akshay\.gemini\antigravity-ide\scratch\.agents\skills\impeccable\SKILL.md`): **VERIFIED & READ**
 - `banner-design` (`C:\Users\Akshay\.agents\skills\banner-design\SKILL.md`): **VERIFIED & READ**
 
 ---
 
-## 9. Security & Accessibility Audit Findings (M1)
-- **Dependency CVEs:** `npm audit` reports **0 vulnerabilities**. Upgraded to patched Next.js release.
-- **Frontend Secrets:** 0 exposed keys in frontend bundles. Only server-side placeholders in `.env.example`.
-- **Accessibility:** WCAG 2.2 AA compliant. Text contrast is 11.8:1 for body copy on `#F7F8F3` (AAA Pass), 4.9:1 for primary `#397A55` on `#FFFFFF` (AA Pass). All interactive buttons have ≥44px touch targets. Skip-to-content landmark implemented.
-- **Responsive Fluid Layouts:** Tested across 360px, 390px, 768px, 1024px, 1440px, and 1920px. Zero horizontal overflow.
+## 9. Security & Privacy Audit Findings (M2)
+- **Authentication Guard:** Protected endpoints (`/api/household`, `/api/routines`, `/api/impact`, `/api/recommendations`) return HTTP 401 if unauthenticated.
+- **Rate Limiting:** Sliding-window limiter returns HTTP 429 and `Retry-After` header when IP threshold is breached.
+- **SQL Injection:** Impossible by design; Prisma parameterized prepared queries only. Zero raw SQL string interpolation.
+- **Input Validation & XSS:** Zod schemas reject HTML/script tags and validate coordinate ranges (-90..90, -180..180).
+- **Log Sanitization:** PII and API keys (`password`, `token`, `secret`, `key`) redacted to `[REDACTED]`.
+- **Location Privacy:** 2-decimal truncation (~1.1 km) prevents exact home address identification.
+- **Community Integrity:** Citizen reports hardcoded with `isOfficialData: false`.
 
 ---
 
 ## 10. Automated Test Results
-- **Vitest Unit & Component Tests:** 16 passed, 0 failed (Duration: ~280ms).
+- **Vitest Unit, Service & API Tests:** 52 passed, 0 failed across 5 test suites (Duration: ~2.47s).
 - **TypeScript Compilation:** Passed with 0 errors (`npx tsc --noEmit`).
-- **Production Build:** Static page generation succeeded for `/`, `/_not-found`, and `/dashboard`.
-- **Local Server Probe:** HTTP 200 OK on both `/` and `/dashboard`.
+- **Production Build:** Succeeded (`npm run build` via `next build --webpack`).
+- **Database Migrations:** Clean SQLite schema created and seeded with test fixtures.
 
 ---
 
-## 11. Files Created or Modified in M1
-- `package.json` (Configured dependencies and build/test scripts)
-- `tsconfig.json` (Configured path aliases, strict mode, types for Vitest)
-- `next.config.mjs` (Configured Next.js compiler settings)
-- `postcss.config.mjs` (Configured `@tailwindcss/postcss`)
-- `vitest.config.ts` (Configured Vitest with jsdom and `@vitejs/plugin-react`)
-- `src/test/setup.ts` (Configured `@testing-library/jest-dom/vitest`)
-- `src/lib/utils.ts` (Utility helper `cn` with clsx and tailwind-merge)
-- `src/lib/tokens.ts` (Design tokens for colors, typography, spacing, AQI tiers)
-- `src/app/globals.css` (Tailwind v4 tokens, base typography, focus outlines, motion rules)
-- `src/app/layout.tsx` (Root layout with header, footer, viewport, skip-link)
-- `src/app/page.tsx` (Production homepage with hero, features, workflow, trust, interactive modal)
-- `src/app/dashboard/page.tsx` (Dashboard visual foundation with 10 presentation elements)
-- `src/components/layout/Container.tsx` (Responsive max-width container primitive)
-- `src/components/layout/Header.tsx` (Sticky header, navigation, active links, mobile drawer)
-- `src/components/layout/Footer.tsx` (Footer with OpenAQ attribution, science links, privacy notice)
-- `src/components/home/HeroIllustration.tsx` (Custom vector SVG artwork for city/air/home)
-- `src/components/ui/Button.tsx` (Accessible button with 6 variants, 3 sizes, loading states)
-- `src/components/ui/Card.tsx` (Card container with header, title, description, content, footer)
-- `src/components/ui/Badge.tsx` (Accessible badge pills for statuses and tiers)
-- `src/components/ui/Input.tsx` (Accessible input with labels, icons, error messages)
-- `src/components/ui/Select.tsx` (Accessible select with options and error states)
-- `src/components/ui/Alert.tsx` (Alert box with role="alert" and dismiss handler)
-- `src/components/ui/Modal.tsx` (Accessible dialog with escape key, focus trap, and backdrop)
-- `src/components/ui/Skeleton.tsx` (Loading state primitives with aria-busy)
-- `src/components/ui/Spinner.tsx` (Loading spinner with accessible role="status")
-- `src/components/ui/EmptyState.tsx` (Empty state UI with icon, title, description, action)
-- `src/components/ui/ErrorState.tsx` (Error state UI with retry trigger)
-- `src/components/dashboard/AqiOverview.tsx` (AQI number, severity badge, station metadata)
-- `src/components/dashboard/PollutantCard.tsx` (PM2.5, PM10, NO2, O3 cards with WHO limits)
-- `src/components/dashboard/TrendChart.tsx` (Responsive pure SVG 24-hr diurnal trend chart)
-- `src/components/dashboard/ExplainableRecommendationCard.tsx` (6-field explainability card)
-- `src/components/dashboard/RoutineCard.tsx` (Commute optimization: Inhaled dose vs CO2 avoided)
-- `src/components/dashboard/ImpactMetricCard.tsx` (Audit-grade impact metric with formula drawer)
-- `src/test/components.test.tsx` (16 automated unit/component tests)
-- `scripts/probe-server.mjs` (Automated browser production server probe script)
-- `.mosaic/DESIGN_SYSTEM.md` (Detailed design system and frontend foundation specification)
-- `.mosaic/STATE.md` (Updated state ledger)
+## 11. Files Created or Modified in M2
+- `prisma/schema.prisma` (Normalized schema: User, HouseholdProfile, HouseholdMember, AirQualitySnapshot, SavedRoutine, ImpactLog, CommunityReport, RecommendationRecord)
+- `prisma/migrations/20261120100156_init/migration.sql` (Initial deterministic SQLite migration)
+- `prisma/seed.mjs` (Development fixtures seed script)
+- `src/lib/db.ts` (PrismaClient singleton)
+- `src/lib/logger.ts` (Sanitized logger with PII and credential redaction)
+- `src/lib/rate-limiter.ts` (Defensive sliding-window rate limiter)
+- `src/lib/api-response.ts` (Standardized JSON API envelopes and error interceptor)
+- `src/lib/auth-guard.ts` (Authentication session guard)
+- `src/lib/validations/common.schema.ts` (Coordinates, pagination, sanitized strings)
+- `src/lib/validations/household.schema.ts` (Household profile, member, and vulnerability validations)
+- `src/lib/validations/air-quality.schema.ts` (Pollutant ranges, AQI bounds 0..1000)
+- `src/lib/validations/routine.schema.ts` (Commute transit modes, distance, 24h format)
+- `src/lib/validations/impact.schema.ts` (Action types, CO2e, PM2.5, confidence intervals)
+- `src/lib/validations/community.schema.ts` (Citizen report types, severity, descriptions)
+- `src/lib/validations/recommendation.schema.ts` (6-field explainability contract)
+- `src/repositories/household.repository.ts` (Household and member data access)
+- `src/repositories/air-quality.repository.ts` (Air quality snapshot queries and time-series)
+- `src/repositories/routine.repository.ts` (Commute routine data access)
+- `src/repositories/impact.repository.ts` (Impact logging and mathematical aggregate queries)
+- `src/repositories/community.repository.ts` (Fuzzed community reports data access)
+- `src/repositories/recommendation.repository.ts` (Explainable recommendations storage)
+- `src/services/household.service.ts` (ASHRAE HEPA CADR calculator & vulnerability evaluator)
+- `src/services/impact.service.ts` (DEFRA carbon & particulate avoidance calculator)
+- `src/services/community.service.ts` (2-decimal centroid privacy fuzzing & official data demarcation)
+- `src/services/routine.service.ts` (Commute inhaled dose & emissions estimator)
+- `src/services/air-quality.service.ts` (EPA piecewise linear AQI interpolation & staleness detector)
+- `src/app/api/health/route.ts` (GET health check with db ping and uptime)
+- `src/app/api/location/coordinates/route.ts` (GET location coordinates validation & fuzzing)
+- `src/app/api/household/route.ts` (GET & POST household profile and members)
+- `src/app/api/aqi/route.ts` (GET local AQI snapshot from cache)
+- `src/app/api/routines/route.ts` (GET & POST saved commute routines)
+- `src/app/api/impact/route.ts` (GET & POST verified impact logs and stats)
+- `src/app/api/community/reports/route.ts` (GET & POST citizen observation reports)
+- `src/app/api/recommendations/route.ts` (GET & POST 6-field structured recommendations)
+- `src/test/database.test.ts` (6 database constraint and repository unit tests)
+- `src/test/validations.test.ts` (13 Zod validation schema tests)
+- `src/test/services.test.ts` (9 mathematical algorithm and domain service tests)
+- `src/test/security-api.test.ts` (8 API endpoint, auth guard, rate limit, and logger tests)
+- `next.config.mjs` (Configured serverExternalPackages: ['@prisma/client'])
+- `package.json` (Added build:webpack and locked Prisma 6.4.1)
+- `.mosaic/M2_BACKEND_DATABASE_REPORT.md` (Detailed backend and database documentation)
+- `.mosaic/STATE.md` (Updated state ledger v1.2.0)
 
 ---
 
-## 12. Known Limitations
-- The air quality figures and recommendations displayed on `/dashboard` are labeled development fixtures. Real-time API telemetry and physical forecasting engines are scheduled for activation in Module M4; AI recommendation reasoning is scheduled for M5.
+## 12. Known Limitations & Module Boundaries
+- The current backend endpoints serve structured database fixtures and mathematical calculators. Live third-party AQI provider integrations (OpenAQ v3, Open-Meteo) are strictly scheduled for Module M4.
+- Generative AI recommendation orchestration (Gemini API / multi-provider LLM) is strictly scheduled for Module M5.
+- User session authentication flows (passwords, JWT/cookies, profile onboarding UI) are scheduled for Module M3.
 
 ---
 
 ## 13. Exact Next Authorized Module
-- **`M2 — Backend and Database`**
-- Do NOT begin M2 until authorized by user / MOSAIC prompt.
+- **`M3 — Authentication and Dashboard`**
+- Do NOT begin M3 until authorized by user / MOSAIC prompt.
