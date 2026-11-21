@@ -46,6 +46,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# MOSAIC Local Governance (Confidential / Local-Only)
+# Governance (Confidential / Local-Only)
 .mosaic/
+.nexus/
 

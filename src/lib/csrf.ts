@@ -17,12 +17,27 @@ import { SESSION_COOKIE_NAME } from './session';
  */
 
 /**
+ * Known verified legitimate production application origins for BreatheWise AI deployment.
+ * Explicitly whitelists the primary production domain and canonical main-branch preview domain.
+ * Arbitrary preview deployments and wildcards are strictly prohibited.
+ */
+export const VERIFIED_PRODUCTION_ORIGINS = [
+  'https://breathe-wise-ai-seven.vercel.app',
+  'https://breathe-wise-ai-git-main-akshaysomanis-projects.vercel.app',
+] as const;
+
+/**
  * Retrieves the normalized set of trusted origins from server configuration.
  */
 export function getTrustedOrigins(): Set<string> {
   const origins = new Set<string>();
 
-  // 1. Explicitly configured TRUSTED_ORIGINS environment variable
+  // 1. Built-in verified production application origins
+  for (const prodOrigin of VERIFIED_PRODUCTION_ORIGINS) {
+    origins.add(prodOrigin.toLowerCase());
+  }
+
+  // 2. Explicitly configured TRUSTED_ORIGINS environment variable
   const envOrigins = process.env.TRUSTED_ORIGINS;
   if (envOrigins) {
     envOrigins.split(',').forEach((o) => {
@@ -39,7 +54,7 @@ export function getTrustedOrigins(): Set<string> {
     });
   }
 
-  // 2. Server APP_URL or NEXT_PUBLIC_APP_URL
+  // 3. Server APP_URL or NEXT_PUBLIC_APP_URL
   const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
   if (appUrl) {
     try {
@@ -50,7 +65,7 @@ export function getTrustedOrigins(): Set<string> {
     }
   }
 
-  // 3. Local development and test fallbacks (disabled if NODE_ENV === 'production' unless configured)
+  // 4. Local development and test fallbacks (disabled if NODE_ENV === 'production' unless configured)
   if (process.env.NODE_ENV !== 'production') {
     origins.add('http://localhost:3000');
     origins.add('http://127.0.0.1:3000');
