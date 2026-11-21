@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
+import { Prisma } from '@prisma/client';
 import { logger } from './logger';
 
 export interface ApiErrorResponse {
@@ -102,6 +103,60 @@ export function handleApiError(error: unknown, routeName: string): NextResponse<
     if (error.message.includes('Rate limit')) {
       return apiError('RATE_LIMIT_EXCEEDED', 'Too many requests. Please try again later.', 429);
     }
+  }
+
+  // Prisma Database Exceptions
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') {
+      const target = Array.isArray(error.meta?.target)
+        ? error.meta.target.join(', ')
+        : (error.meta?.target as string) || '';
+
+      if (target.toLowerCase().includes('email')) {
+        return apiError(
+          'ACCOUNT_EXISTS',
+          'An account with this email address already exists. Please sign in.',
+          409
+        );
+      }
+      return apiError('CONFLICT', 'A resource with these details already exists.', 409);
+    }
+
+    if (error.code === 'P2025') {
+      return apiError('NOT_FOUND', 'The requested record was not found.', 404);
+    }
+
+    if (error.code === 'P2021') {
+      logger.error(`[DATABASE_SCHEMA_ERROR] Target table does not exist in active database. Run migrations or schema push.`, {
+        code: error.code,
+        meta: error.meta,
+      });
+      return apiError(
+        'INTERNAL_SERVER_ERROR',
+        'An unexpected error occurred. Please try again later.',
+        500
+      );
+    }
+
+    if (error.code === 'P1001' || error.code === 'P1002') {
+      logger.error(`[DATABASE_CONNECTION_ERROR] Database server unreachable or timed out`, {
+        code: error.code,
+      });
+      return apiError(
+        'INTERNAL_SERVER_ERROR',
+        'An unexpected error occurred. Please try again later.',
+        500
+      );
+    }
+  }
+
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    logger.error(`[DATABASE_INIT_FAILURE] Prisma Client failed to initialize database connection: ${error.errorCode || error.message}`);
+    return apiError(
+      'INTERNAL_SERVER_ERROR',
+      'An unexpected error occurred. Please try again later.',
+      500
+    );
   }
 
   // Default internal server error with zero sensitive information leakage

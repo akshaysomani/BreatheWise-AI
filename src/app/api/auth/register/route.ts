@@ -6,6 +6,7 @@ import { hashPassword } from '@/lib/password';
 import { createDatabaseSession, getSessionCookieOptions, invalidateDatabaseSession, SESSION_COOKIE_NAME } from '@/lib/session';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 import { validateCsrf } from '@/lib/csrf';
+import { logger } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
   const clientIp = getClientIp(req);
@@ -85,6 +86,10 @@ export async function POST(req: NextRequest) {
     response.cookies.set(cookieOptions.name, sessionToken, cookieOptions);
     return response;
   } catch (error) {
+    const errorCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    logger.error('Registration processing failure in POST /api/auth/register', {
+      errorCode: typeof errorCode === 'string' ? errorCode : undefined,
+    });
     return handleApiError(error, 'POST /api/auth/register');
   }
 }
