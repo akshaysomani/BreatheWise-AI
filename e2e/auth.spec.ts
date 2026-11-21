@@ -69,7 +69,8 @@ test.describe('BreatheWise AI Authentication & Dashboard Browser Flows', () => {
     await signOutBtn.click();
 
     // 8. Verify redirection away from dashboard to home page
-    await page.waitForURL('http://127.0.0.1:3000/', { timeout: 10_000 });
+    // Use baseURL-relative pattern to avoid localhost vs 127.0.0.1 mismatch
+    await page.waitForURL('**/', { timeout: 10_000 });
 
     // 9. Attempt to directly revisit /dashboard without valid session
     await page.goto('/dashboard');

@@ -1,4 +1,14 @@
 import { z } from 'zod';
+import { SPECIAL_CHAR_REGEX } from './password-requirements';
+
+export const passwordComplexitySchema = z
+  .string()
+  .min(8, 'Password must be at least 8 characters in length')
+  .max(100, 'Password cannot exceed 100 characters')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter (A–Z)')
+  .regex(/[a-z]/, 'Password must contain at least one lowercase letter (a–z)')
+  .regex(/[0-9]/, 'Password must contain at least one number (0–9)')
+  .regex(SPECIAL_CHAR_REGEX, 'Password must contain at least one special character (!@#$%^&*)');
 
 export const registerSchema = z.object({
   name: z
@@ -13,12 +23,7 @@ export const registerSchema = z.object({
     .toLowerCase()
     .email('Please enter a valid email address')
     .max(255, 'Email cannot exceed 255 characters'),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(100, 'Password cannot exceed 100 characters')
-    .regex(/[a-zA-Z]/, 'Password must contain at least one letter')
-    .regex(/[0-9]/, 'Password must contain at least one number'),
+  password: passwordComplexitySchema,
 });
 
 export const loginSchema = z.object({
@@ -44,12 +49,7 @@ export const passwordResetRequestSchema = z.object({
 
 export const passwordResetConfirmSchema = z.object({
   token: z.string().min(16, 'Invalid or missing reset token'),
-  newPassword: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(100, 'Password cannot exceed 100 characters')
-    .regex(/[a-zA-Z]/, 'Password must contain at least one letter')
-    .regex(/[0-9]/, 'Password must contain at least one number'),
+  newPassword: passwordComplexitySchema,
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;

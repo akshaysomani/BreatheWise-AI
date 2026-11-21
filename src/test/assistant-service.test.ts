@@ -24,10 +24,11 @@ describe('BreatheWise AI — Module 5 Assistant & Recommendations Suite', () => 
   beforeEach(async () => {
     resetRateLimits();
 
-    // Clean up test user records
+    // Clean up test user records and test station snapshots
     await prisma.householdProfile.deleteMany({ where: { userId: { in: [userA.id, userB.id] } } });
     await prisma.conversation.deleteMany({ where: { userId: { in: [userA.id, userB.id] } } });
     await prisma.recommendationRecord.deleteMany({ where: { userId: { in: [userA.id, userB.id] } } });
+    await prisma.airQualitySnapshot.deleteMany({ where: { stationId: { startsWith: 'TEST_' } } });
 
     // Ensure test users exist
     await prisma.user.upsert({
@@ -781,8 +782,8 @@ describe('BreatheWise AI — Module 5 Assistant & Recommendations Suite', () => 
       }
     });
 
-    it('verifies gemini-3.8-flash as production default model', () => {
-      expect(DEFAULT_GEMINI_MODEL).toBe('gemini-3.8-flash');
+    it('verifies gemini-3-flash-preview as production default model', () => {
+      expect(DEFAULT_GEMINI_MODEL).toBe('gemini-3-flash-preview');
     });
 
     it('retries transient HTTP 503 and succeeds on retry', async () => {

@@ -22,7 +22,7 @@ describe('API Foundation & Security Guards (M2 Phase 5 & 7)', () => {
       expect(json.success).toBe(true);
       expect(json.data.status).toBe('healthy');
       expect(json.data.database.status).toBe('connected');
-      expect(json.data.database.engine).toBe('sqlite');
+      expect(json.data.database.engine).toBe('postgresql');
       expect(typeof json.data.database.latencyMs).toBe('number');
       // Verifies zero leakage of internal database file paths or credentials
       expect(json.data.database.url).toBeUndefined();

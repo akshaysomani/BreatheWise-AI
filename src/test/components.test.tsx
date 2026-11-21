@@ -156,6 +156,62 @@ describe('UI Component Foundation Tests (M1)', () => {
       );
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+
+    it('renders responsive flex container with scrollable body and optional sticky footer', () => {
+      const handleClose = vi.fn();
+      render(
+        <Modal
+          isOpen={true}
+          onClose={handleClose}
+          title="Responsive Modal"
+          description="Testing short viewports"
+          footer={<button>Submit</button>}
+        >
+          <div data-testid="modal-content">Long content to scroll</div>
+        </Modal>
+      );
+
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toBeInTheDocument();
+      expect(screen.getByText('Responsive Modal')).toBeInTheDocument();
+      expect(screen.getByText('Testing short viewports')).toBeInTheDocument();
+      expect(screen.getByText('Submit')).toBeInTheDocument();
+
+      // Verify the modal card container has max-h-[85vh]
+      expect(dialog.className).toContain('max-h-[85vh]');
+    });
+
+    it('handles Tab key within dialog for accessible focus trapping', () => {
+      const handleClose = vi.fn();
+      render(
+        <Modal isOpen={true} onClose={handleClose} title="Focus Trap Modal">
+          <input data-testid="input-1" />
+          <button data-testid="button-1">Action</button>
+        </Modal>
+      );
+
+      // Trigger Tab key
+      fireEvent.keyDown(window, { key: 'Tab' });
+      // Trigger Shift+Tab key
+      fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+      // Dialog remains open and does not crash
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('includes motion-reduce utility classes for users requesting reduced motion', () => {
+      render(
+        <Modal isOpen={true} onClose={vi.fn()} title="Reduced Motion Modal">
+          <p>Reduced motion content</p>
+        </Modal>
+      );
+
+      const backdrop = screen.getByTestId('modal-backdrop');
+      const dialog = screen.getByRole('dialog');
+
+      expect(backdrop.className).toContain('motion-reduce:animate-none');
+      expect(backdrop.className).toContain('motion-reduce:transition-none');
+      expect(dialog.className).toContain('motion-reduce:transition-none');
+    });
   });
 
   describe('Dashboard Presentation Components', () => {

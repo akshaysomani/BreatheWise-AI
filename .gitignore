@@ -22,6 +22,8 @@
 *.db-journal
 *.sqlite
 *.sqlite-journal
+*.bak
+*.db.bak
 
 # Testing & Coverage
 /coverage
@@ -43,3 +45,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# MOSAIC Local Governance (Confidential / Local-Only)
+.mosaic/
+

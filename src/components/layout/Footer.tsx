@@ -45,17 +45,32 @@ export function Footer() {
               </li>
               <li>
                 <Link href="/dashboard" className="hover:text-[#397A55] transition-colors">
+                  Dashboard
+                </Link>
+              </li>
+              <li>
+                <Link href="/air-quality" className="hover:text-[#397A55] transition-colors">
                   Air Quality Radar
                 </Link>
               </li>
               <li>
-                <Link href="/#features" className="hover:text-[#397A55] transition-colors">
-                  Features & Capabilities
+                <Link href="/assistant" className="hover:text-[#397A55] transition-colors">
+                  AI Assistant
                 </Link>
               </li>
               <li>
-                <Link href="/#how-it-works" className="hover:text-[#397A55] transition-colors">
-                  How It Works
+                <Link href="/tips" className="hover:text-[#397A55] transition-colors">
+                  Tips & Solutions
+                </Link>
+              </li>
+              <li>
+                <Link href="/impact" className="hover:text-[#397A55] transition-colors">
+                  Impact Tracker
+                </Link>
+              </li>
+              <li>
+                <Link href="/about" className="hover:text-[#397A55] transition-colors">
+                  About BreatheWise
                 </Link>
               </li>
             </ul>
@@ -68,22 +83,22 @@ export function Footer() {
             </h4>
             <ul className="space-y-2.5 text-sm text-[#68766C]">
               <li>
-                <Link href="/dashboard" className="hover:text-[#397A55] transition-colors">
+                <Link href="/tips" className="hover:text-[#397A55] transition-colors">
                   HEPA CADR Calculator
                 </Link>
               </li>
               <li>
-                <Link href="/dashboard" className="hover:text-[#397A55] transition-colors">
+                <Link href="/tips" className="hover:text-[#397A55] transition-colors">
                   Diurnal Ventilation Window
                 </Link>
               </li>
               <li>
-                <Link href="/dashboard" className="hover:text-[#397A55] transition-colors">
+                <Link href="/tips" className="hover:text-[#397A55] transition-colors">
                   Inhaled Dose vs. Emissions
                 </Link>
               </li>
               <li>
-                <Link href="/dashboard" className="hover:text-[#397A55] transition-colors">
+                <Link href="/about" className="hover:text-[#397A55] transition-colors">
                   Impact Formula Transparency
                 </Link>
               </li>
@@ -120,18 +135,17 @@ export function Footer() {
 
         {/* Bottom Bar */}
         <div className="mt-12 pt-8 border-t border-[#E2E8DE] flex flex-col sm:flex-row items-center justify-between text-xs text-[#68766C] gap-4">
-          <p>© {new Date().getFullYear()} BreatheWise AI. Developed for Prompt War — Challenge 6.</p>
+          <p>© {new Date().getFullYear()} BreatheWise AI. Intelligent Urban Air Quality & Respiratory Protection Platform.</p>
           <div className="flex items-center gap-6">
-            <Link href="/#about" className="hover:text-[#397A55]">
+            <Link href="/about" className="hover:text-[#397A55] transition-colors">
               Methodology
             </Link>
-            <Link href="/#about" className="hover:text-[#397A55]">
+            <Link href="/privacy-policy" className="hover:text-[#397A55] transition-colors">
               Privacy Policy
             </Link>
-            <Link href="/#about" className="hover:text-[#397A55]">
+            <Link href="/terms-of-use" className="hover:text-[#397A55] transition-colors">
               Terms of Use
             </Link>
-            <span className="text-[#397A55] font-semibold">Target: 97.50+ / 100</span>
           </div>
         </div>
       </Container>

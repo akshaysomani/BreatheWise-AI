@@ -5,32 +5,28 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Container } from './Container';
 import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
-import { Badge } from '@/components/ui/Badge';
-import { Wind, Menu, X, ArrowUpRight, Sparkles, User, LogOut, LayoutDashboard } from 'lucide-react';
+import { Wind, Menu, X, ArrowUpRight, Sparkles, User, LogOut, LayoutDashboard, Settings } from 'lucide-react';
 
 interface NavItem {
   label: string;
   href: string;
-  moduleTarget?: string;
-  isExternal?: boolean;
 }
 
 const navItems: NavItem[] = [
   { label: 'Home', href: '/' },
   { label: 'Dashboard', href: '/dashboard' },
-  { label: 'AI Assistant', href: '/assistant', moduleTarget: 'Module M5 (AI Assistant & Recommendations)' },
-  { label: 'Air Quality', href: '/air-quality', moduleTarget: 'Module M4 (Air Quality Intelligence Engine)' },
-  { label: 'Tips & Solutions', href: '/#features' },
-  { label: 'Impact Tracker', href: '/impact-tracker', moduleTarget: 'Module M6 (Impact Tracker & Community)' },
-  { label: 'About', href: '/#about' },
+  { label: 'AI Assistant', href: '/assistant' },
+  { label: 'Air Quality', href: '/air-quality' },
+  { label: 'Tips & Solutions', href: '/tips' },
+  { label: 'Impact Tracker', href: '/impact' },
+  { label: 'About', href: '/about' },
 ];
 
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeModulePreview, setActiveModulePreview] = useState<string | null>(null);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
   // Authenticated user state
   const [sessionUser, setSessionUser] = useState<{ id: string; email: string; name: string | null } | null>(null);
@@ -50,7 +46,6 @@ export function Header() {
           }
         }
       } catch {
-        // Fallback to unauthenticated on error
         if (isMounted) setSessionUser(null);
       } finally {
         if (isMounted) setCheckingSession(false);
@@ -67,18 +62,11 @@ export function Header() {
       await fetch('/api/auth/logout', { method: 'POST' });
       setSessionUser(null);
       setMobileMenuOpen(false);
+      setProfileDropdownOpen(false);
       router.push('/');
       router.refresh();
     } catch {
       router.push('/');
-    }
-  };
-
-  const handleNavClick = (e: React.MouseEvent, item: NavItem) => {
-    if (item.moduleTarget) {
-      e.preventDefault();
-      setActiveModulePreview(item.moduleTarget);
-      setMobileMenuOpen(false);
     }
   };
 
@@ -108,12 +96,11 @@ export function Header() {
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center gap-1" aria-label="Main Navigation">
             {navItems.map((item) => {
-              const isActive = pathname === item.href;
+              const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
               return (
                 <Link
                   key={item.label}
                   href={item.href}
-                  onClick={(e) => handleNavClick(e, item)}
                   className={`px-3.5 py-2 text-sm font-medium rounded-[8px] transition-colors relative focus-visible:outline-2 focus-visible:outline-[#397A55] ${
                     isActive
                       ? 'text-[#397A55] bg-[#EEF3EA] font-semibold'
@@ -121,11 +108,6 @@ export function Header() {
                   }`}
                 >
                   {item.label}
-                  {item.moduleTarget && (
-                    <span className="ml-1 text-[10px] px-1 py-0.2 bg-[#F7F8F3] border border-[#E2E8DE] rounded text-[#718C72]">
-                      Preview
-                    </span>
-                  )}
                 </Link>
               );
             })}
@@ -134,13 +116,61 @@ export function Header() {
           {/* Desktop Action CTAs / User Auth */}
           <div className="hidden sm:flex items-center gap-3">
             {sessionUser ? (
-              <div className="flex items-center gap-3">
-                <Link href="/dashboard">
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#EEF3EA] text-[#27352D] hover:bg-[#E2E8DE] transition-colors text-sm font-medium">
+              <div className="relative flex items-center gap-2">
+                <div className="relative">
+                  <button
+                    onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#EEF3EA] text-[#27352D] hover:bg-[#E2E8DE] transition-colors text-sm font-medium focus-visible:outline-2 focus-visible:outline-[#397A55]"
+                    aria-label="User Account Menu"
+                    aria-expanded={profileDropdownOpen}
+                  >
                     <User className="w-4 h-4 text-[#397A55]" />
                     <span className="max-w-[140px] truncate">{sessionUser.name || sessionUser.email}</span>
-                  </div>
-                </Link>
+                  </button>
+
+                  {/* Profile Dropdown Menu */}
+                  {profileDropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-56 rounded-xl bg-white shadow-lg border border-[#E2E8DE] py-2 z-50 animate-in fade-in-50 duration-150">
+                      <div className="px-4 py-2 border-b border-[#E2E8DE]">
+                        <p className="text-xs text-[#68766C]">Signed in as</p>
+                        <p className="text-sm font-semibold text-[#27352D] truncate">{sessionUser.email}</p>
+                      </div>
+                      <Link
+                        href="/dashboard"
+                        onClick={() => setProfileDropdownOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2.5 text-sm text-[#27352D] hover:bg-[#EEF3EA] hover:text-[#397A55] transition-colors"
+                      >
+                        <LayoutDashboard className="w-4 h-4" />
+                        <span>Dashboard Overview</span>
+                      </Link>
+                      <Link
+                        href="/assistant"
+                        onClick={() => setProfileDropdownOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2.5 text-sm text-[#27352D] hover:bg-[#EEF3EA] hover:text-[#397A55] transition-colors"
+                      >
+                        <Sparkles className="w-4 h-4 text-[#397A55]" />
+                        <span>AI Assistant</span>
+                      </Link>
+                      <Link
+                        href="/impact"
+                        onClick={() => setProfileDropdownOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2.5 text-sm text-[#27352D] hover:bg-[#EEF3EA] hover:text-[#397A55] transition-colors"
+                      >
+                        <ArrowUpRight className="w-4 h-4" />
+                        <span>Personal Impact</span>
+                      </Link>
+                      <div className="border-t border-[#E2E8DE] my-1" />
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-[#B8423D] hover:bg-[#FDF2F2] transition-colors text-left"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -185,21 +215,23 @@ export function Header() {
       {mobileMenuOpen && (
         <div className="lg:hidden border-b border-[#E2E8DE] bg-white px-4 pt-2 pb-6 space-y-2 animate-in slide-in-from-top duration-200">
           <nav className="flex flex-col space-y-1" aria-label="Mobile Navigation">
-            {navItems.map((item) => (
-              <Link
-                key={item.label}
-                href={item.href}
-                onClick={(e) => handleNavClick(e, item)}
-                className="flex items-center justify-between px-3.5 py-3 text-base font-medium rounded-[8px] text-[#27352D] hover:bg-[#EEF3EA] hover:text-[#397A55] transition-colors"
-              >
-                <span>{item.label}</span>
-                {item.moduleTarget && (
-                  <Badge variant="secondary" size="sm">
-                    M-Roadmap
-                  </Badge>
-                )}
-              </Link>
-            ))}
+            {navItems.map((item) => {
+              const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center justify-between px-3.5 py-3 text-base font-medium rounded-[8px] transition-colors ${
+                    isActive
+                      ? 'text-[#397A55] bg-[#EEF3EA] font-semibold'
+                      : 'text-[#27352D] hover:bg-[#EEF3EA] hover:text-[#397A55]'
+                  }`}
+                >
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
           </nav>
           <div className="pt-4 border-t border-[#E2E8DE] flex flex-col gap-2">
             {sessionUser ? (
@@ -239,29 +271,6 @@ export function Header() {
           </div>
         </div>
       )}
-
-      {/* Architecture Roadmap Preview Modal */}
-      <Modal
-        isOpen={!!activeModulePreview}
-        onClose={() => setActiveModulePreview(null)}
-        title="Engineering Roadmap Specification"
-        size="md"
-      >
-        <div className="space-y-4">
-          <div className="p-3 bg-[#EEF3EA] rounded-lg flex items-center gap-3">
-            <Sparkles className="w-5 h-5 text-[#397A55] shrink-0" />
-            <p className="text-sm font-semibold text-[#27352D]">{activeModulePreview}</p>
-          </div>
-          <p className="text-sm text-[#68766C] leading-relaxed">
-            This module is scheduled for implementation in upcoming modules in accordance with the strict sequential MOSAIC specification.
-          </p>
-          <div className="flex justify-end pt-2">
-            <Button variant="outline" size="sm" onClick={() => setActiveModulePreview(null)}>
-              Dismiss
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </header>
   );
 }

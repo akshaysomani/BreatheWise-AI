@@ -48,6 +48,29 @@ interface SessionUser {
   role: string;
 }
 
+const CITY_COORDINATES: Record<string, { lat: number; lon: number }> = {
+  Ahmedabad: { lat: 23.0225, lon: 72.5714 },
+  Gandhinagar: { lat: 23.2156, lon: 72.6369 },
+  Surat: { lat: 21.1702, lon: 72.8311 },
+  Vadodara: { lat: 22.3072, lon: 73.1812 },
+  Rajkot: { lat: 22.3039, lon: 70.8022 },
+  Delhi: { lat: 28.6139, lon: 77.2090 },
+  Noida: { lat: 28.5355, lon: 77.3910 },
+  Gurugram: { lat: 28.4595, lon: 77.0266 },
+  Ghaziabad: { lat: 28.6692, lon: 77.4538 },
+  Faridabad: { lat: 28.4089, lon: 77.3178 },
+  Mumbai: { lat: 19.0760, lon: 72.8777 },
+  Pune: { lat: 18.5204, lon: 73.8567 },
+  Bengaluru: { lat: 12.9716, lon: 77.5946 },
+  Hyderabad: { lat: 17.3850, lon: 78.4867 },
+  Chennai: { lat: 13.0827, lon: 80.2707 },
+  Kolkata: { lat: 22.5726, lon: 88.3639 },
+  Jaipur: { lat: 26.9124, lon: 75.7873 },
+  Lucknow: { lat: 26.8467, lon: 80.9462 },
+  Chandigarh: { lat: 30.7333, lon: 76.7794 },
+  Patna: { lat: 25.5941, lon: 85.1376 },
+};
+
 interface HouseholdData {
   profile: {
     id: string;
@@ -113,9 +136,12 @@ export default function DashboardPage() {
 
   // Household Setup Form State
   const [setupModalOpen, setSetupModalOpen] = useState(false);
+  const [detectingGps, setDetectingGps] = useState(false);
   const [setupForm, setSetupForm] = useState({
     city: 'Delhi',
     neighborhood: '',
+    latitude: 28.6139,
+    longitude: 77.209,
     homeType: 'APARTMENT',
     floorAreaSqFt: '1000',
     ceilingHeightFt: '9.0',
@@ -253,11 +279,31 @@ export default function DashboardPage() {
         });
       }
 
+      // Match coordinate lookup by city name (case-insensitive) or preserve detected GPS
+      const cityKey = Object.keys(CITY_COORDINATES).find(
+        (c) => c.toLowerCase() === setupForm.city.trim().toLowerCase()
+      );
+      const matchedCoords = cityKey ? CITY_COORDINATES[cityKey] : null;
+
+      const latitude =
+        setupForm.latitude && setupForm.latitude !== 28.6139
+          ? setupForm.latitude
+          : matchedCoords
+          ? matchedCoords.lat
+          : 28.6139;
+
+      const longitude =
+        setupForm.longitude && setupForm.longitude !== 77.209
+          ? setupForm.longitude
+          : matchedCoords
+          ? matchedCoords.lon
+          : 77.209;
+
       const payload = {
         city: setupForm.city,
         neighborhood: setupForm.neighborhood || undefined,
-        latitude: 28.6139,
-        longitude: 77.209,
+        latitude,
+        longitude,
         homeType: setupForm.homeType,
         floorAreaSqFt: Number(setupForm.floorAreaSqFt),
         ceilingHeightFt: Number(setupForm.ceilingHeightFt),
@@ -809,13 +855,69 @@ export default function DashboardPage() {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              id="h-city"
-              label="City"
-              value={setupForm.city}
-              onChange={(e) => setSetupForm({ ...setupForm, city: e.target.value })}
-              required
-            />
+            <div>
+              <Input
+                id="h-city"
+                label="City"
+                value={setupForm.city}
+                onChange={(e) => {
+                  const newCity = e.target.value;
+                  const matched = CITY_COORDINATES[newCity.trim()];
+                  setSetupForm({
+                    ...setupForm,
+                    city: newCity,
+                    latitude: matched ? matched.lat : setupForm.latitude,
+                    longitude: matched ? matched.lon : setupForm.longitude,
+                  });
+                }}
+                required
+              />
+              <div className="mt-1 flex items-center justify-between text-[11px] text-[#68766C]">
+                <span>
+                  Coords: {setupForm.latitude.toFixed(2)}°N, {setupForm.longitude.toFixed(2)}°E
+                </span>
+                <button
+                  type="button"
+                  disabled={detectingGps}
+                  onClick={() => {
+                    if (typeof window !== 'undefined' && navigator.geolocation) {
+                      setDetectingGps(true);
+                      navigator.geolocation.getCurrentPosition(
+                        async (pos) => {
+                          const lat = pos.coords.latitude;
+                          const lon = pos.coords.longitude;
+                          try {
+                            const res = await fetch(`/api/location/coordinates?lat=${lat}&lon=${lon}`);
+                            const json = await res.json();
+                            const detectedCity = json?.data?.city || setupForm.city;
+                            setSetupForm((prev) => ({
+                              ...prev,
+                              city: detectedCity,
+                              latitude: lat,
+                              longitude: lon,
+                            }));
+                          } catch {
+                            setSetupForm((prev) => ({
+                              ...prev,
+                              latitude: lat,
+                              longitude: lon,
+                            }));
+                          } finally {
+                            setDetectingGps(false);
+                          }
+                        },
+                        () => setDetectingGps(false),
+                        { timeout: 8000 }
+                      );
+                    }
+                  }}
+                  className="text-[#397A55] font-semibold hover:underline flex items-center gap-1"
+                >
+                  <MapPin className="w-3 h-3" />
+                  {detectingGps ? 'Detecting...' : 'Auto-detect GPS'}
+                </button>
+              </div>
+            </div>
             <Input
               id="h-neighborhood"
               label="Neighborhood / Sector"

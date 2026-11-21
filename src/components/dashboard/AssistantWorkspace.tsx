@@ -255,8 +255,8 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
             <h2 className="text-xl font-extrabold text-[#27352D] font-[var(--font-heading)]">
               BreatheWise AI Assistant
             </h2>
-            <Badge variant="accent" size="sm">
-              Module 5 Active
+            <Badge variant="success" size="sm">
+              AI Operational
             </Badge>
           </div>
           <p className="text-xs text-[#68766C] max-w-2xl">

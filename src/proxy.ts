@@ -2,7 +2,13 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { sanitizeReturnUrl } from '@/lib/sanitize-redirect';
 
-export function middleware(req: NextRequest) {
+/**
+ * BreatheWise AI — Next.js Request Proxy & Route Guard (M8.6 / M7-003)
+ * 
+ * Migrated from deprecated `middleware.ts` convention to the official Next.js 16.4.6 `proxy` convention.
+ * Enforces session authentication guards on protected application routes and manages safe login redirects.
+ */
+export function proxy(req: NextRequest) {
   const { pathname, searchParams } = req.nextUrl;
   const sessionCookie = req.cookies.get('breathewise_session')?.value;
 

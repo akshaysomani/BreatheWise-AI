@@ -1,5 +1,5 @@
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -29,6 +29,7 @@ model User {
   passwordResetTokens   PasswordResetToken[]
   conversations         Conversation[]
   feedbacks             RecommendationFeedback[]
+  communityUpvotes      CommunityUpvote[]
 
   @@index([email])
 }
@@ -232,7 +233,22 @@ model CommunityReport {
 
   createdAt       DateTime @default(now())
 
+  upvotesList     CommunityUpvote[]
+
   @@index([fuzzedLatitude, fuzzedLongitude])
+  @@index([userId])
+}
+
+model CommunityUpvote {
+  id        String          @id @default(uuid())
+  reportId  String
+  userId    String
+  report    CommunityReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+
+  @@unique([reportId, userId])
+  @@index([reportId])
   @@index([userId])
 }
 

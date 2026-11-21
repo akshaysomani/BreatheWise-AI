@@ -167,7 +167,7 @@ test.describe('BreatheWise AI Module 6: Impact Tracker & Community Intelligence'
     await expect(page.locator('h1')).toContainText(/Welcome/i);
 
     // 3. Click Community tab
-    const communityTab = page.locator('button:has-text("Community")').first();
+    const communityTab = page.locator('div.overflow-x-auto button:has-text("Community")');
     await expect(communityTab).toBeVisible();
     await communityTab.click();
 
@@ -311,5 +311,78 @@ test.describe('BreatheWise AI Module 6: Impact Tracker & Community Intelligence'
     await expect(page.locator('h2:has-text("Community Environmental Intelligence")')).toBeVisible();
     const isOverflowing390 = await page.evaluate(() => document.body.scrollWidth > window.innerWidth);
     expect(isOverflowing390).toBe(false);
+  });
+
+  test('Flow 5: Short-Viewport Mobile Modal Usability & Accessibility (360×640 & 360×568) (M7-009 / M8.9)', async ({ page, context }) => {
+    const user = await prisma.user.create({
+      data: {
+        email: `modal_short_${Date.now()}@breathewise.test`,
+        passwordHash: 'argon2id_mock_hash',
+        name: 'Modal Test User',
+      },
+    });
+
+    const { sessionToken } = await createDatabaseSession(user.id);
+    await context.addCookies([
+      {
+        name: 'breathewise_session',
+        value: sessionToken,
+        domain: 'localhost',
+        path: '/',
+        httpOnly: true,
+        sameSite: 'Lax',
+      },
+    ]);
+
+    // 1. Test Activity Logger Modal on 360×640 (Mobile Small)
+    await page.setViewportSize({ width: 360, height: 640 });
+    await page.goto('/dashboard');
+    await page.locator('button:has-text("Impact Tracker")').first().click();
+
+    const logButton = page.locator('button:has-text("Log Activity")').first();
+    await logButton.click();
+
+    // Verify modal is visible and contained within viewport height
+    const dialog = page.locator('div[role="dialog"]');
+    await expect(dialog).toBeVisible();
+
+    const modalBox = await dialog.boundingBox();
+    expect(modalBox).toBeTruthy();
+    if (modalBox) {
+      expect(modalBox.height).toBeLessThanOrEqual(640 * 0.95);
+      expect(modalBox.width).toBeLessThanOrEqual(360);
+    }
+
+    // Verify modal title and action buttons are accessible
+    await expect(page.locator('h3#modal-title')).toBeVisible();
+    const saveButton = page.locator('button:has-text("Save to Audit Trail")');
+    await saveButton.scrollIntoViewIfNeeded();
+    await expect(saveButton).toBeVisible();
+
+    // Verify ESC key accessibility closes modal
+    await page.keyboard.press('Escape');
+    await expect(dialog).not.toBeVisible();
+
+    // 2. Test Community Report Modal on Ultra-Short 360×568 (iPhone SE / Short Mobile)
+    await page.setViewportSize({ width: 360, height: 568 });
+    await page.locator('button:has-text("Community")').first().click();
+
+    const reportButton = page.locator('button:has-text("Report Local Condition")').first();
+    await reportButton.click();
+
+    await expect(dialog).toBeVisible();
+    const shortModalBox = await dialog.boundingBox();
+    expect(shortModalBox).toBeTruthy();
+    if (shortModalBox) {
+      expect(shortModalBox.height).toBeLessThanOrEqual(568 * 0.95);
+    }
+
+    const submitObsButton = page.locator('button:has-text("Submit Observation")');
+    await submitObsButton.scrollIntoViewIfNeeded();
+    await expect(submitObsButton).toBeVisible();
+
+    // Close modal via Cancel button
+    await page.locator('button:has-text("Cancel")').first().click();
+    await expect(dialog).not.toBeVisible();
   });
 });

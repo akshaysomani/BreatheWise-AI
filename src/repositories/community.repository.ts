@@ -130,7 +130,65 @@ export const communityRepository = {
     });
   },
 
-  async upvote(reportId: string) {
+  async upvote(reportId: string, userId?: string) {
+    if (userId) {
+      return prisma.$transaction(async (tx) => {
+        const report = await tx.communityReport.findUnique({
+          where: { id: reportId },
+          select: { id: true, status: true },
+        });
+
+        if (!report) {
+          throw new Error('Report not found');
+        }
+        if (report.status !== 'ACTIVE') {
+          throw new Error('Cannot upvote quarantined or non-active observation');
+        }
+
+        const existing = await tx.communityUpvote.findUnique({
+          where: {
+            reportId_userId: {
+              reportId,
+              userId,
+            },
+          },
+        });
+
+        if (existing) {
+          const err: any = new Error('You have already upvoted this community observation.');
+          err.code = 'ALREADY_UPVOTED';
+          throw err;
+        }
+
+        await tx.communityUpvote.create({
+          data: {
+            reportId,
+            userId,
+          },
+        });
+
+        return tx.communityReport.update({
+          where: { id: reportId },
+          data: {
+            upvotes: { increment: 1 },
+          },
+          select: {
+            id: true,
+            reportType: true,
+            severity: true,
+            description: true,
+            fuzzedLatitude: true,
+            fuzzedLongitude: true,
+            neighborhood: true,
+            isOfficialData: true,
+            upvotes: true,
+            status: true,
+            createdAt: true,
+          },
+        });
+      });
+    }
+
     return prisma.communityReport.update({
       where: { id: reportId },
       data: {
@@ -138,7 +196,16 @@ export const communityRepository = {
       },
       select: {
         id: true,
+        reportType: true,
+        severity: true,
+        description: true,
+        fuzzedLatitude: true,
+        fuzzedLongitude: true,
+        neighborhood: true,
+        isOfficialData: true,
         upvotes: true,
+        status: true,
+        createdAt: true,
       },
     });
   },

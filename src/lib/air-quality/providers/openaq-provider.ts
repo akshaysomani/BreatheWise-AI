@@ -36,12 +36,36 @@ const PARAMETER_MAP: Record<string, PollutantCode> = {
   pb: 'Pb',
 };
 
+export interface OpenAQProviderStatus {
+  configured: boolean;
+  endpoint: string;
+  status: 'READY' | 'MISSING_API_KEY';
+  retryPolicy: {
+    maxRetries: number;
+    timeoutMs: number;
+  };
+}
+
 export class OpenAQProvider implements AirQualityProvider {
   readonly name = 'OPENAQ_V3';
   private apiKey?: string;
 
   constructor(apiKey?: string) {
     this.apiKey = apiKey || process.env.OPENAQ_API_KEY;
+  }
+
+  getProviderStatus(): OpenAQProviderStatus {
+    const key = this.apiKey?.trim();
+    const isConfigured = Boolean(key && key.length > 0);
+    return {
+      configured: isConfigured,
+      endpoint: OPENAQ_BASE_URL,
+      status: isConfigured ? 'READY' : 'MISSING_API_KEY',
+      retryPolicy: {
+        maxRetries: MAX_RETRIES,
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+      },
+    };
   }
 
   private getHeaders(): Record<string, string> {

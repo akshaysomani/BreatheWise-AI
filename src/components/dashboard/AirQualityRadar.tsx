@@ -69,6 +69,47 @@ export function AirQualityRadar({
   const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [locatingGps, setLocatingGps] = useState(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+
+  const handleUseDeviceLocation = () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      setGpsError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setLocatingGps(true);
+    setGpsError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        try {
+          const res = await fetch(`/api/location/coordinates?lat=${lat}&lon=${lon}`);
+          const json = await res.json();
+          const cityName = json?.data?.city || 'My Device Location';
+          setCurrentCoords({
+            lat,
+            lon,
+            label: `📍 ${cityName} (GPS)`,
+          });
+        } catch {
+          setCurrentCoords({
+            lat,
+            lon,
+            label: `📍 Device GPS (${lat.toFixed(2)}°N, ${lon.toFixed(2)}°E)`,
+          });
+        } finally {
+          setLocatingGps(false);
+        }
+      },
+      (err) => {
+        setLocatingGps(false);
+        setGpsError('Location access was denied or timed out. Please select a regional hub.');
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  };
 
   const fetchTelemetry = useCallback(async (lat: number, lon: number, isManualRefresh = false) => {
     if (isManualRefresh) setRefreshing(true);
@@ -228,7 +269,22 @@ export function AirQualityRadar({
 
         {/* Station / Hub Selector Chips */}
         <div className="pt-3 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
-          <span className="text-[#68766C] font-medium flex items-center gap-1 shrink-0 mr-1">
+          <button
+            onClick={handleUseDeviceLocation}
+            disabled={locatingGps}
+            className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors shrink-0 flex items-center gap-1 ${
+              currentCoords.label.includes('(GPS)')
+                ? 'bg-[#397A55] text-white shadow-xs'
+                : 'bg-[#EEF3EA] text-[#397A55] border border-[#CDE0D3] hover:bg-[#DCE7D6]'
+            }`}
+            title="Detect device GPS coordinates"
+            data-testid="use-current-location-btn"
+          >
+            <MapPin className={`w-3 h-3 ${locatingGps ? 'animate-bounce text-[#D69B47]' : 'text-current'}`} />
+            {locatingGps ? 'Locating...' : 'Use My Current Location'}
+          </button>
+
+          <span className="text-[#68766C] font-medium flex items-center gap-1 shrink-0 mx-1">
             <Compass className="w-3.5 h-3.5 text-[#397A55]" />
             Regional Hubs:
           </span>
@@ -266,6 +322,15 @@ export function AirQualityRadar({
             </button>
           ))}
         </div>
+
+        {gpsError && (
+          <div className="mt-2.5 px-3 py-1.5 bg-[#FFF1EB] border border-[#EA580C]/30 rounded-lg text-[#B43C00] text-xs flex items-center justify-between">
+            <span>{gpsError}</span>
+            <button onClick={() => setGpsError(null)} className="font-bold ml-2 text-xs hover:underline">
+              Dismiss
+            </button>
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="p-5 space-y-6">

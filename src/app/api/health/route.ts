@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
         database: {
           status: 'connected',
           latencyMs,
-          engine: 'sqlite',
+          engine: 'postgresql',
         },
         service: 'BreatheWise AI Backend API',
         version: '1.0.0',

@@ -8,7 +8,7 @@ import {
   RecommendationFeedbackInput,
 } from '@/lib/validations/assistant.schema';
 import { buildAssistantContext } from '@/lib/ai/context-builder';
-import { generateAssistantResponse } from '@/lib/ai/gemini-client';
+import { generateAssistantResponse, getGeminiProviderStatus } from '@/lib/ai/gemini-client';
 import { deterministicFallbackEngine } from '@/lib/ai/deterministic-fallback';
 import { DailyRoutinePlan, IndoorAdviceReport } from '@/lib/ai/types';
 import { logger } from '@/lib/logger';
@@ -41,7 +41,14 @@ export const assistantService = {
       conversationId = newThread.id;
     }
 
-    // 2. Persist incoming user message
+    // 2. Retrieve multi-turn conversation history prior to new message insertion
+    const existingThread = await assistantRepository.getConversationById(userId, conversationId);
+    const priorMessages = (existingThread?.messages || []).map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    // Persist incoming user message
     await assistantRepository.addMessage(conversationId, 'USER', input.message);
 
     // 3. Assemble trusted, anonymized environmental and household context
@@ -52,8 +59,8 @@ export const assistantService = {
 
     const contextPayload = await buildAssistantContext(userId, coords);
 
-    // 4. Generate structured assistant response (Gemini with deterministic fallback)
-    const assistantResult = await generateAssistantResponse(input, contextPayload);
+    // 4. Generate structured assistant response (Gemini with deterministic fallback grounded in context + history)
+    const assistantResult = await generateAssistantResponse(input, contextPayload, {}, priorMessages);
 
     // 5. Persist each structured recommendation to the database for auditability
     const savedRecIds: string[] = [];
@@ -187,5 +194,12 @@ export const assistantService = {
       input.recommendationId,
       input.feedbackReason
     );
+  },
+
+  /**
+   * Retrieves operational status and configuration validity of the AI service.
+   */
+  getAiStatus() {
+    return getGeminiProviderStatus();
   },
 };

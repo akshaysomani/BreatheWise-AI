@@ -1,0 +1,72 @@
+{
+  "User": {
+    "sqlite_count": 3120,
+    "pg_count": 3120,
+    "status": "PASS"
+  },
+  "AirQualitySnapshot": {
+    "sqlite_count": 3,
+    "pg_count": 3,
+    "status": "PASS"
+  },
+  "Session": {
+    "sqlite_count": 2740,
+    "pg_count": 2740,
+    "status": "PASS"
+  },
+  "PasswordResetToken": {
+    "sqlite_count": 481,
+    "pg_count": 481,
+    "status": "PASS"
+  },
+  "HouseholdProfile": {
+    "sqlite_count": 58,
+    "pg_count": 58,
+    "status": "PASS"
+  },
+  "SavedRoutine": {
+    "sqlite_count": 138,
+    "pg_count": 138,
+    "status": "PASS"
+  },
+  "ImpactLog": {
+    "sqlite_count": 329,
+    "pg_count": 329,
+    "status": "PASS"
+  },
+  "CommunityReport": {
+    "sqlite_count": 348,
+    "pg_count": 348,
+    "status": "PASS"
+  },
+  "RecommendationRecord": {
+    "sqlite_count": 1638,
+    "pg_count": 1638,
+    "status": "PASS"
+  },
+  "Conversation": {
+    "sqlite_count": 738,
+    "pg_count": 738,
+    "status": "PASS"
+  },
+  "HouseholdMember": {
+    "sqlite_count": 4,
+    "pg_count": 4,
+    "status": "PASS"
+  },
+  "CommunityUpvote": {
+    "sqlite_count": 49,
+    "pg_count": 49,
+    "status": "PASS"
+  },
+  "RecommendationFeedback": {
+    "sqlite_count": 71,
+    "pg_count": 71,
+    "status": "PASS"
+  },
+  "ConversationMessage": {
+    "sqlite_count": 1474,
+    "pg_count": 1474,
+    "status": "PASS"
+  }
+}

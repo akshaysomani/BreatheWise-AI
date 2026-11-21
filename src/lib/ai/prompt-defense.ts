@@ -164,14 +164,29 @@ You MUST respond with valid JSON matching this exact structure:
 `.trim();
 
 /**
- * Builds a prompt with strict boundary delimiters protecting against injection.
+ * Builds a prompt with strict boundary delimiters protecting against injection,
+ * supporting multi-turn conversation history grounding.
  */
 export function buildSecurePrompt(
   environmentalXml: string,
   userContextXml: string,
-  userQuery: string
+  userQuery: string,
+  conversationHistory?: Array<{ role: string; content: string }>
 ): string {
   const scanned = scanAndSanitizeUserQuery(userQuery);
+
+  let historyBlock = '';
+  if (conversationHistory && conversationHistory.length > 0) {
+    historyBlock = `\n<CONVERSATION_HISTORY>\n${conversationHistory
+      .slice(-8)
+      .map(
+        (m) =>
+          `<MESSAGE role="${m.role === 'ASSISTANT' ? 'ASSISTANT' : 'USER'}">${scanAndSanitizeUserQuery(
+            m.content
+          ).sanitizedText}</MESSAGE>`
+      )
+      .join('\n')}\n</CONVERSATION_HISTORY>\n`;
+  }
 
   return `
 ${BREATHEWISE_SYSTEM_PROMPT}
@@ -183,7 +198,7 @@ ${environmentalXml}
 <USER_CONTEXT>
 ${userContextXml}
 </USER_CONTEXT>
-
+${historyBlock}
 <USER_QUERY>
 ${scanned.sanitizedText}
 </USER_QUERY>
