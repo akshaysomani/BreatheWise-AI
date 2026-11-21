@@ -160,9 +160,11 @@ export function handleApiError(error: unknown, routeName: string): NextResponse<
   }
 
   // Default internal server error with zero sensitive information leakage
+  const rawMsg = error instanceof Error ? error.message : String(error);
   return apiError(
     'INTERNAL_SERVER_ERROR',
     'An unexpected error occurred. Please try again later.',
-    500
+    500,
+    { debugError: rawMsg }
   );
 }
