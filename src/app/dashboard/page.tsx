@@ -760,8 +760,12 @@ export default function DashboardPage() {
         {/* Tab 5: Community Environmental Intelligence */}
         {activeTab === 'community' && (
           <CommunityWorkspace
-            userLat={28.61}
-            userLon={77.20}
+            userLat={
+              (household?.profile?.city && CITY_COORDINATES[household.profile.city as keyof typeof CITY_COORDINATES]?.lat) || 28.61
+            }
+            userLon={
+              (household?.profile?.city && CITY_COORDINATES[household.profile.city as keyof typeof CITY_COORDINATES]?.lon) || 77.20
+            }
             userCity={household?.profile?.city || 'Delhi'}
           />
         )}

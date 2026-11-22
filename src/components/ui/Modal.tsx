@@ -30,6 +30,8 @@ export function Modal({
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -40,9 +42,9 @@ export function Modal({
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
-    // Move initial focus to the first focusable element or the dialog
+    // Move initial focus to the first focusable element or the dialog ONLY if focus is not already inside
     const timer = setTimeout(() => {
-      if (dialogRef.current) {
+      if (dialogRef.current && !dialogRef.current.contains(document.activeElement)) {
         const focusable = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
         if (focusable.length > 0) {
           focusable[0].focus();
@@ -55,7 +57,7 @@ export function Modal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -98,7 +100,7 @@ export function Modal({
         triggerRef.current.focus();
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

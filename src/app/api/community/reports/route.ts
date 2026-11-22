@@ -8,6 +8,8 @@ import {
 } from '@/lib/validations/community.schema';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   const clientIp = getClientIp(req);
   const rateLimit = checkRateLimit(`community_get_${clientIp}`, 60, 60_000);
@@ -27,7 +29,12 @@ export async function GET(req: NextRequest) {
     const parsedFilter = communityQueryFilterSchema.safeParse(queryParams);
     const filter = parsedFilter.success
       ? parsedFilter.data
-      : { lat: 28.61, lon: 77.20, limit: 30, offset: 0, radiusKm: 30 };
+      : { limit: 30, offset: 0 };
+
+    if (queryParams.scope === 'all' || filter.scope === 'all') {
+      delete (filter as any).lat;
+      delete (filter as any).lon;
+    }
 
     // CSV Export Handler with strict privacy coarsening & formula injection defense (M8.2)
     if (format === 'csv') {
@@ -37,7 +44,8 @@ export async function GET(req: NextRequest) {
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
           'Content-Disposition': 'attachment; filename="breathewise-community-observations.csv"',
-          'Cache-Control': 'no-store',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Pragma': 'no-cache',
         },
       });
     }
@@ -45,20 +53,31 @@ export async function GET(req: NextRequest) {
     // JSON Export Handler with privacy provenance metadata (M8.2)
     if (format === 'export-json' || format === 'json-export') {
       const exportData = await communityService.exportObservationsAsJson(filter);
-      return apiSuccess(exportData);
+      return apiSuccess(exportData, undefined, 200, {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+      });
     }
 
     const { reports, totalCount } = await communityService.getFilteredFeed(filter);
 
-    return apiSuccess({
-      reports,
-      totalCount,
-      privacyPolicy:
-        'All community report coordinates are strictly fuzzed to ~1.1 km precision and timestamps are coarsened to the hour (M8.2). Household identities, real names, and exact addresses are never stored or published.',
-      scientificDisclaimer:
-        'Community observations reflect qualitative citizen reports and are strictly segregated from certified regulatory air station data. isOfficialData is ALWAYS false.',
-      isOfficialData: false,
-    });
+    return apiSuccess(
+      {
+        reports,
+        totalCount,
+        privacyPolicy:
+          'All community report coordinates are strictly fuzzed to ~1.1 km precision and timestamps are coarsened to the hour (M8.2). Household identities, real names, and exact addresses are never stored or published.',
+        scientificDisclaimer:
+          'Community observations reflect qualitative citizen reports and are strictly segregated from certified regulatory air station data. isOfficialData is ALWAYS false.',
+        isOfficialData: false,
+      },
+      undefined,
+      200,
+      {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+      }
+    );
   } catch (error) {
     return handleApiError(error, 'GET /api/community/reports');
   }

@@ -44,11 +44,12 @@ export const flagCommunityReportSchema = z
   .strict();
 
 export const communityQueryFilterSchema = z.object({
-  lat: z.coerce.number().min(-90).max(90).optional().default(28.61),
-  lon: z.coerce.number().min(-180).max(180).optional().default(77.20),
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lon: z.coerce.number().min(-180).max(180).optional(),
   reportType: communityReportTypeEnum.optional(),
   severity: communityReportSeverityEnum.optional(),
-  radiusKm: z.coerce.number().min(1).max(100).default(25),
+  scope: z.enum(['all', 'local', 'nearby']).optional(),
+  radiusKm: z.coerce.number().min(1).max(500).optional(),
   limit: z.coerce.number().min(1).max(100).default(30),
   offset: z.coerce.number().min(0).default(0),
 });

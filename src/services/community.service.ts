@@ -1,6 +1,7 @@
 import { communityRepository } from '@/repositories/community.repository';
 import {
   CreateCommunityReportInput,
+  createCommunityReportSchema,
   CommunityQueryFilter,
   FlagCommunityReportInput,
 } from '@/lib/validations/community.schema';
@@ -78,10 +79,11 @@ export const communityService = {
   },
 
   async submitReport(userId: string, data: CreateCommunityReportInput) {
-    const { fuzzedLatitude, fuzzedLongitude } = this.fuzzCoordinates(data.latitude, data.longitude);
+    const validated = createCommunityReportSchema.parse(data);
+    const { fuzzedLatitude, fuzzedLongitude } = this.fuzzCoordinates(validated.latitude, validated.longitude);
 
     const created = await communityRepository.create(userId, {
-      ...data,
+      ...validated,
       fuzzedLatitude,
       fuzzedLongitude,
     });
@@ -99,7 +101,7 @@ export const communityService = {
     let fuzzedLatitude: number | undefined;
     let fuzzedLongitude: number | undefined;
 
-    if (filter.lat !== undefined && filter.lon !== undefined) {
+    if (filter.lat !== undefined && filter.lon !== undefined && filter.scope !== 'all') {
       const fuzzed = this.fuzzCoordinates(filter.lat, filter.lon);
       fuzzedLatitude = fuzzed.fuzzedLatitude;
       fuzzedLongitude = fuzzed.fuzzedLongitude;

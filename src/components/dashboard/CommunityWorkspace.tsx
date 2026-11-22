@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -29,6 +29,7 @@ import {
   HelpCircle,
   Clock,
   Compass,
+  Globe,
 } from 'lucide-react';
 
 interface CommunityReport {
@@ -62,6 +63,7 @@ export function CommunityWorkspace({
   const [error, setError] = useState<string | null>(null);
 
   // Filters
+  const [selectedScope, setSelectedScope] = useState<'ALL' | 'LOCAL'>('ALL');
   const [selectedType, setSelectedType] = useState<string>('ALL');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('ALL');
 
@@ -69,6 +71,15 @@ export function CommunityWorkspace({
   const [submitModalOpen, setSubmitModalOpen] = useState(false);
   const [flagModalOpen, setFlagModalOpen] = useState(false);
   const [reportToFlag, setReportToFlag] = useState<CommunityReport | null>(null);
+
+  // Stable callbacks for modal closing to prevent re-creation
+  const handleCloseSubmitModal = useCallback(() => {
+    setSubmitModalOpen(false);
+  }, []);
+
+  const handleCloseFlagModal = useCallback(() => {
+    setFlagModalOpen(false);
+  }, []);
 
   // Upvote tracking (client-side set of upvoted report IDs)
   const [upvotedIds, setUpvotedIds] = useState<Set<string>>(new Set());
@@ -88,19 +99,32 @@ export function CommunityWorkspace({
   const [flagDetails, setFlagDetails] = useState('');
   const [flagging, setFlagging] = useState(false);
 
+  // Sync coords when userLat/userLon changes
+  useEffect(() => {
+    setFormLat(userLat.toFixed(2));
+    setFormLon(userLon.toFixed(2));
+  }, [userLat, userLon]);
+
   // Fetch Feed
-  const fetchReports = async () => {
+  const fetchReports = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
-      params.append('lat', userLat.toString());
-      params.append('lon', userLon.toString());
+      if (selectedScope === 'LOCAL') {
+        params.append('lat', userLat.toString());
+        params.append('lon', userLon.toString());
+        params.append('radiusKm', '50');
+      } else {
+        params.append('scope', 'all');
+      }
       if (selectedType !== 'ALL') params.append('reportType', selectedType);
       if (selectedSeverity !== 'ALL') params.append('severity', selectedSeverity);
       params.append('limit', '40');
 
-      const res = await fetch(`/api/community/reports?${params.toString()}`);
+      const res = await fetch(`/api/community/reports?${params.toString()}`, {
+        cache: 'no-store',
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message || 'Failed to fetch community feed');
 
@@ -111,11 +135,11 @@ export function CommunityWorkspace({
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedScope, selectedType, selectedSeverity, userLat, userLon]);
 
   useEffect(() => {
     fetchReports();
-  }, [selectedType, selectedSeverity, userLat, userLon]);
+  }, [fetchReports]);
 
   // Handle Upvote
   const handleUpvote = async (reportId: string) => {
@@ -310,6 +334,34 @@ export function CommunityWorkspace({
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-[#E2E8DE]">
         <div className="flex flex-wrap items-center gap-1.5">
+          {/* Feed Scope Selector */}
+          <div className="flex items-center gap-1 bg-[#F7F8F3] p-1 rounded-lg border border-[#E2E8DE] mr-2">
+            <button
+              type="button"
+              onClick={() => setSelectedScope('ALL')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                selectedScope === 'ALL'
+                  ? 'bg-[#397A55] text-white shadow-xs'
+                  : 'text-[#68766C] hover:text-[#27352D]'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>All Communities</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedScope('LOCAL')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                selectedScope === 'LOCAL'
+                  ? 'bg-[#397A55] text-white shadow-xs'
+                  : 'text-[#68766C] hover:text-[#27352D]'
+              }`}
+            >
+              <Compass className="w-3.5 h-3.5" />
+              <span>Near Me</span>
+            </button>
+          </div>
+
           <span className="text-xs font-semibold text-[#68766C] mr-2 flex items-center gap-1">
             <Filter className="w-3.5 h-3.5" /> Filter Type:
           </span>
@@ -451,7 +503,7 @@ export function CommunityWorkspace({
       {/* Submit Observation Modal */}
       <Modal
         isOpen={submitModalOpen}
-        onClose={() => setSubmitModalOpen(false)}
+        onClose={handleCloseSubmitModal}
         title="Submit Local Environmental Observation"
         size="md"
       >
@@ -509,13 +561,19 @@ export function CommunityWorkspace({
             placeholder="e.g. Sector 18, Indirapuram, or Nehru Park"
             value={formNeighborhood}
             onChange={(e) => setFormNeighborhood(e.target.value)}
+            autoComplete="off"
             required
           />
 
           <div>
-            <label className="block text-xs font-semibold text-[#27352D] mb-1">
-              Description of Local Conditions (Max 1,000 characters)
-            </label>
+            <div className="flex justify-between items-center mb-1">
+              <label htmlFor="sub-desc" className="block text-xs font-semibold text-[#27352D]">
+                Description of Local Conditions (Max 1,000 characters)
+              </label>
+              <span className={`text-[10px] font-mono ${formDescription.length >= 1000 ? 'text-[#DC2626] font-bold' : 'text-[#68766C]'}`}>
+                {formDescription.length} / 1000
+              </span>
+            </div>
             <textarea
               id="sub-desc"
               rows={4}
@@ -529,7 +587,7 @@ export function CommunityWorkspace({
           </div>
 
           <div className="flex justify-end gap-3 pt-3 border-t border-[#E2E8DE]">
-            <Button variant="outline" size="sm" type="button" onClick={() => setSubmitModalOpen(false)}>
+            <Button variant="outline" size="sm" type="button" onClick={handleCloseSubmitModal}>
               Cancel
             </Button>
             <Button variant="primary" size="sm" type="submit" isLoading={submitting}>
@@ -543,7 +601,7 @@ export function CommunityWorkspace({
       {reportToFlag && (
         <Modal
           isOpen={flagModalOpen}
-          onClose={() => setFlagModalOpen(false)}
+          onClose={handleCloseFlagModal}
           title="Report Inappropriate Community Observation"
           size="sm"
         >
@@ -582,7 +640,7 @@ export function CommunityWorkspace({
             </div>
 
             <div className="flex justify-end gap-3 pt-3 border-t border-[#E2E8DE]">
-              <Button variant="outline" size="sm" type="button" onClick={() => setFlagModalOpen(false)}>
+              <Button variant="outline" size="sm" type="button" onClick={handleCloseFlagModal}>
                 Cancel
               </Button>
               <Button variant="danger" size="sm" type="submit" isLoading={flagging}>
