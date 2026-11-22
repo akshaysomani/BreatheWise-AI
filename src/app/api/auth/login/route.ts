@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import prisma from '@/lib/db';
-import { apiSuccess, apiError, handleApiError } from '@/lib/api-response';
+import { apiSuccess, apiError, handleApiError, validateRequestBodySize } from '@/lib/api-response';
 import { loginSchema } from '@/lib/validations/auth.schema';
 import { verifyPassword, dummyPasswordVerification } from '@/lib/password';
 import { createDatabaseSession, getSessionCookieOptions, invalidateDatabaseSession, SESSION_COOKIE_NAME } from '@/lib/session';
@@ -8,6 +8,10 @@ import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 import { validateCsrf } from '@/lib/csrf';
 
 export async function POST(req: NextRequest) {
+  // Body size validation (max 20 KB)
+  const sizeError = validateRequestBodySize(req, 20 * 1024);
+  if (sizeError) return sizeError;
+
   const clientIp = getClientIp(req);
 
   // Rate limit: 5 login attempts per 5 minutes per IP
@@ -31,6 +35,16 @@ export async function POST(req: NextRequest) {
     const validated = loginSchema.parse(body);
 
     const normalizedEmail = validated.email.trim().toLowerCase();
+
+    // Account-level brute-force defense: Rate limit per target email (max 10 attempts per 15 minutes)
+    const emailRateLimit = checkRateLimit(`login_account_${normalizedEmail}`, 10, 900_000);
+    if (!emailRateLimit.allowed) {
+      return apiError(
+        'RATE_LIMIT_EXCEEDED',
+        'Too many failed login attempts for this account. Please wait 15 minutes before trying again.',
+        429
+      );
+    }
 
     // Query user by email
     const user = await prisma.user.findUnique({

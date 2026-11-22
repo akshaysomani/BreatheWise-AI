@@ -134,10 +134,19 @@ export const communityService = {
     return this.serializePublicReport(updated);
   },
 
-  async flagObservation(reportId: string, input: FlagCommunityReportInput) {
+  async flagObservation(reportId: string, input: FlagCommunityReportInput, userId?: string) {
     const existing = await communityRepository.getById(reportId);
     if (!existing) {
       throw new Error('Report not found');
+    }
+    if (existing.status !== 'ACTIVE') {
+      throw new Error('Cannot flag non-active observation');
+    }
+    // Prevent author from flagging their own observation
+    if (userId && existing.userId === userId) {
+      const err: any = new Error('You cannot flag your own observation.');
+      err.code = 'CANNOT_FLAG_OWN';
+      throw err;
     }
     const updated = await communityRepository.flag(reportId, input.reason, input.details);
     return this.serializePublicReport(updated);

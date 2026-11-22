@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { sanitizeReturnUrl } from '@/lib/sanitize-redirect';
 
+function isValidSessionCookieFormat(cookie?: string): boolean {
+  if (!cookie || typeof cookie !== 'string') return false;
+  const trimmed = cookie.trim();
+  // Canonical session token is 64-character hexadecimal string (256-bit entropy)
+  return trimmed.length === 64 && /^[0-9a-f]{64}$/i.test(trimmed);
+}
+
 /**
  * BreatheWise AI — Next.js Request Proxy & Route Guard (M8.6 / M7-003)
  * 
@@ -10,21 +17,27 @@ import { sanitizeReturnUrl } from '@/lib/sanitize-redirect';
  */
 export function proxy(req: NextRequest) {
   const { pathname, searchParams } = req.nextUrl;
-  const sessionCookie = req.cookies.get('breathewise_session')?.value;
+  const rawCookie = req.cookies.get('breathewise_session')?.value;
+  const hasValidSessionCookie = isValidSessionCookieFormat(rawCookie);
 
   // 1. Protected routes: /dashboard and sub-paths
   if (pathname.startsWith('/dashboard')) {
-    if (!sessionCookie) {
+    if (!hasValidSessionCookie) {
       const loginUrl = new URL('/login', req.url);
       loginUrl.searchParams.set('returnUrl', pathname);
-      return NextResponse.redirect(loginUrl);
+      const res = NextResponse.redirect(loginUrl);
+      if (rawCookie) {
+        // Clear malformed or counterfeit cookie
+        res.cookies.delete('breathewise_session');
+      }
+      return res;
     }
   }
 
   // 2. Auth routes: /login, /register
   // If user is already authenticated via session cookie, redirect them to dashboard
   if (pathname === '/login' || pathname === '/register') {
-    if (sessionCookie) {
+    if (hasValidSessionCookie) {
       const returnUrl = searchParams.get('returnUrl');
       const safeUrl = sanitizeReturnUrl(returnUrl);
       return NextResponse.redirect(new URL(safeUrl, req.url));

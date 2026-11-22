@@ -125,7 +125,7 @@ export async function generateAssistantResponse(
 
   for (let modelIdx = 0; modelIdx < candidateModels.length; modelIdx++) {
     const currentModel = candidateModels[modelIdx];
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent`;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       const remainingMs = deadline - Date.now();
@@ -146,6 +146,7 @@ export async function generateAssistantResponse(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
           },
           body: JSON.stringify({
             contents: [

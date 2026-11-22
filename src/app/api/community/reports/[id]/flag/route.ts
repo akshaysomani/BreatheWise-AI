@@ -25,9 +25,15 @@ export async function POST(req: NextRequest, context: RouteContext) {
     const body = await req.json();
     const validated = flagCommunityReportSchema.parse(body);
 
-    const result = await communityService.flagObservation(id, validated);
+    const result = await communityService.flagObservation(id, validated, user.id);
     return apiSuccess(result);
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'CANNOT_FLAG_OWN' || error?.message?.includes('cannot flag your own')) {
+      return apiError('FORBIDDEN', 'You cannot flag your own observation.', 403);
+    }
+    if (error?.message?.includes('non-active')) {
+      return apiError('BAD_REQUEST', 'Cannot flag quarantined or non-active observation.', 400);
+    }
     return handleApiError(error, 'POST /api/community/reports/[id]/flag');
   }
 }

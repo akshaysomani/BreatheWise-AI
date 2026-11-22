@@ -144,11 +144,15 @@ export function validateCsrf(req: NextRequest): CsrfValidationResult {
     };
   }
 
-  // In headless tests or direct server-to-server calls without cookies, verify custom header
+  // In headless tests or direct API calls without cookies, require custom header or explicit JSON content-type
   const customHeader = req.headers.get('x-requested-with') || req.headers.get('content-type');
   if (customHeader?.includes('application/json')) {
     return { valid: true };
   }
 
-  return { valid: true };
+  // Reject all other state-changing requests missing origin metadata (prevents CSRF via form submissions or text/plain)
+  return {
+    valid: false,
+    reason: 'Missing Origin and Referer headers on state-changing request without valid application/json content-type.',
+  };
 }

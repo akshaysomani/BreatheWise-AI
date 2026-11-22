@@ -1,8 +1,19 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, handleApiError } from '@/lib/api-response';
+import { apiSuccess, apiError, handleApiError } from '@/lib/api-response';
 import { invalidateDatabaseSession, SESSION_COOKIE_NAME } from '@/lib/session';
+import { validateCsrf } from '@/lib/csrf';
 
 export async function POST(req: NextRequest) {
+  // CSRF validation: When Origin or Referer is supplied, reject untrusted cross-origin requests
+  const origin = req.headers.get('origin');
+  const referer = req.headers.get('referer');
+  if (origin || referer) {
+    const csrf = validateCsrf(req);
+    if (!csrf.valid) {
+      return apiError('CSRF_ERROR', csrf.reason || 'Invalid request origin', 403);
+    }
+  }
+
   try {
     // 1. Get session token from cookie
     const sessionCookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;

@@ -66,6 +66,29 @@ export function apiError(
 }
 
 /**
+ * Defensive request-body size limiter.
+ * Inspects content-length header and fails fast with HTTP 413 if the payload exceeds maxSizeBytes.
+ * Default: 100 KB (102,400 bytes).
+ */
+export function validateRequestBodySize(
+  req: { headers: Headers },
+  maxSizeBytes: number = 100 * 1024
+): NextResponse<ApiErrorResponse> | null {
+  const contentLength = req.headers.get('content-length');
+  if (contentLength) {
+    const size = parseInt(contentLength, 10);
+    if (!isNaN(size) && size > maxSizeBytes) {
+      return apiError(
+        'PAYLOAD_TOO_LARGE',
+        `Request payload exceeds maximum allowed size of ${Math.round(maxSizeBytes / 1024)} KB.`,
+        413
+      );
+    }
+  }
+  return null;
+}
+
+/**
  * Centralized API error handler.
  * Safely transforms errors into standardized responses without leaking internal stack traces or raw SQL.
  */

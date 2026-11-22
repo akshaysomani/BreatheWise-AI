@@ -17,11 +17,16 @@
 
 const INJECTION_PATTERNS = [
   /ignore\s+(all\s+)?(previous|prior|above)\s+instructions/i,
+  /disregard\s+(all\s+)?(instructions|guidelines|rules|constraints)/i,
   /system\s+prompt/i,
+  /(reveal|show|print|display)\s+(the\s+)?(system\s+prompt|hidden\s+prompt|developer\s+instructions)/i,
   /reveal\s+(api\s+key|secret|token|password|hash)/i,
   /\bDAN\s+mode\b/i,
+  /\bjailbreak\b/i,
   /developer\s+mode\s+enabled/i,
   /you\s+are\s+now\s+an\s+unrestricted/i,
+  /roleplay\s+as\s+(an?\s+)?(unrestricted|jailbroken|evil|unfiltered)/i,
+  /pretend\s+(you\s+are|to\s+be)\s+(an?\s+)?(unrestricted|jailbroken)/i,
   /bypass\s+(safety|security|rules|guardrails)/i,
   /drop\s+table\b/i,
   /<script\b[^>]*>/i,
@@ -37,14 +42,18 @@ export interface PromptScanResult {
 
 /**
  * Scans and neutralizes potential prompt injection vectors in user-supplied queries.
+ * Normalizes Unicode (NFKC) to defeat homoglyph and obfuscation bypasses.
  */
 export function scanAndSanitizeUserQuery(query: string): PromptScanResult {
   if (!query || typeof query !== 'string') {
     return { isSuspicious: false, sanitizedText: '', matchedVectors: [] };
   }
 
+  // Unicode normalization (NFKC) collapses homoglyphs and hidden ligature variations
+  const normalized = query.normalize('NFKC');
+
   // Length bounding
-  let sanitized = query.trim().slice(0, 2000);
+  let sanitized = normalized.trim().slice(0, 2000);
 
   const matchedVectors: string[] = [];
 
@@ -58,7 +67,7 @@ export function scanAndSanitizeUserQuery(query: string): PromptScanResult {
 
   // Strip dangerous angle brackets or control characters that could break XML delimiters
   sanitized = sanitized
-    .replace(/<\/?(system|environment|context|instructions|evidence|user_query)[^>]*>/gi, '')
+    .replace(/<\/?(system|environment|context|instructions|evidence|user_query|environmental_evidence|user_context|conversation_history|message)[^>]*>/gi, '')
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
 
   return {

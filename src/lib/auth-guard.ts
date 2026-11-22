@@ -22,8 +22,20 @@ export interface SessionPayload {
   iat: number;
 }
 
-const SESSION_SECRET =
-  process.env.SESSION_SECRET || 'local-dev-session-secret-breathewise-ai-32-chars-minimum';
+function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret || secret.trim().length < 32) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'CRITICAL CONFIGURATION ERROR: Mandatory environment variable SESSION_SECRET (minimum 32 characters) is missing or insufficient in production.'
+      );
+    }
+    return 'local-dev-session-secret-breathewise-ai-32-chars-minimum';
+  }
+  return secret.trim();
+}
+
+const SESSION_SECRET = getSessionSecret();
 
 function base64UrlEncode(str: string): string {
   return Buffer.from(str)

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import prisma from '@/lib/db';
-import { apiSuccess, apiError, handleApiError } from '@/lib/api-response';
+import { apiSuccess, apiError, handleApiError, validateRequestBodySize } from '@/lib/api-response';
 import { registerSchema } from '@/lib/validations/auth.schema';
 import { hashPassword } from '@/lib/password';
 import { createDatabaseSession, getSessionCookieOptions, invalidateDatabaseSession, SESSION_COOKIE_NAME } from '@/lib/session';
@@ -9,6 +9,10 @@ import { validateCsrf } from '@/lib/csrf';
 import { logger } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
+  // Body size validation (max 50 KB)
+  const sizeError = validateRequestBodySize(req, 50 * 1024);
+  if (sizeError) return sizeError;
+
   const clientIp = getClientIp(req);
 
   // Rate limit: Max 10 registration requests per hour per IP

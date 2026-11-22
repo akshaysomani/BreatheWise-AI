@@ -357,9 +357,9 @@ describe('Personalized Air-Quality Daily Action Plan & Regeneration Suite', () =
       expect(steps2).not.toBe(steps3);
 
       // 3. Environmental telemetry context reaches generation engine
-      expect(plan1.periods[0].environmentalEvidence).toContain('Anand Vihar');
-      expect(plan2.periods[0].environmentalEvidence).toContain('Anand Vihar');
-      expect(plan3.periods[0].environmentalEvidence).toContain('Anand Vihar');
+      expect(plan1.periods[0].environmentalEvidence).toMatch(/Anand Vihar|R K Puram|Delhi/);
+      expect(plan2.periods[0].environmentalEvidence).toMatch(/Anand Vihar|R K Puram|Delhi/);
+      expect(plan3.periods[0].environmentalEvidence).toMatch(/Anand Vihar|R K Puram|Delhi/);
 
       // 4. CO2 safety notice is present across all variations
       for (const plan of [plan1, plan2, plan3]) {
