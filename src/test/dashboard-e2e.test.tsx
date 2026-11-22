@@ -215,6 +215,81 @@ describe('Browser-Level Integration & Dashboard UX Tests (M3 Phase 6 & 11)', () 
         expect(screen.getByText(/Household Profile & CADR/i)).toBeInTheDocument();
         expect(screen.getByText(/Commute Routines/i)).toBeInTheDocument();
         expect(screen.getByText(/Account & Privacy/i)).toBeInTheDocument();
+        // Verify no duplicate Sign Out button exists inside DashboardPage
+        expect(screen.queryByRole('button', { name: /^Sign Out$/i })).not.toBeInTheDocument();
+      });
+    });
+
+    it('renders exactly one Sign Out button when Header and DashboardPage are mounted together', async () => {
+      global.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/api/auth/session')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              data: {
+                authenticated: true,
+                user: { id: 'usr_xyz', email: 'family@breathewise.local', name: 'Sharma Family' },
+              },
+            }),
+          });
+        }
+        if (url.includes('/api/auth/logout')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ success: true }),
+          });
+        }
+        if (url.includes('/api/household')) {
+          return Promise.resolve({
+            ok: false,
+            json: async () => ({ error: { code: 'NOT_FOUND' } }),
+          });
+        }
+        if (url.includes('/api/routines')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ data: { routines: [] } }),
+          });
+        }
+        if (url.includes('/api/impact')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ data: { logs: [], aggregates: null } }),
+          });
+        }
+        if (url.includes('/api/aqi')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ data: { isLiveExternalFeed: false } }),
+          });
+        }
+        return Promise.reject(new Error(`Unhandled URL: ${url}`));
+      });
+
+      render(
+        <div>
+          <Header />
+          <DashboardPage />
+        </div>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Welcome back, Sharma Family/i)).toBeInTheDocument();
+        // Only one Sign Out button exists across the entire dashboard view (in the Header navigation)
+        const signOutButtons = screen.getAllByRole('button', { name: /Sign Out/i });
+        // Header renders desktop button (and mobile dropdown button when open)
+        // With dropdown closed, only the desktop navbar button is visible in document
+        expect(signOutButtons.filter((b) => b.classList.contains('border-[#F0D5D5]'))).toHaveLength(1);
+      });
+
+      // Clicking navigation Sign Out triggers logout
+      const desktopSignOutBtn = screen.getByRole('button', { name: /Sign Out/i });
+      fireEvent.click(desktopSignOutBtn);
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith('/api/auth/logout', { method: 'POST' });
+        expect(mockPush).toHaveBeenCalledWith('/');
+        expect(mockRefresh).toHaveBeenCalled();
       });
     });
   });

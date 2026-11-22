@@ -23,7 +23,6 @@ import {
   Home,
   User,
   Users,
-  LogOut,
   Sparkles,
   Info,
   Calendar,
@@ -245,12 +244,6 @@ export default function DashboardPage() {
     } catch {}
   };
 
-  const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.push('/');
-    router.refresh();
-  };
-
   const handleSaveHousehold = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingHousehold(true);
@@ -378,33 +371,19 @@ export default function DashboardPage() {
     <div className="py-8 lg:py-12 bg-[#F7F8F3] min-h-screen">
       <Container size="wide" className="space-y-8">
         {/* Top Header Bar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#E2E8DE]">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <Badge variant="success" size="sm">
-                Verified Account
-              </Badge>
-              <span className="text-xs text-[#68766C]">Server-side authenticated session</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#27352D] font-[var(--font-heading)]">
-              Welcome back, {user?.name || user?.email.split('@')[0]}
-            </h1>
-            <p className="text-sm text-[#68766C] mt-0.5">
-              Account: <span className="font-mono text-xs">{user?.email}</span>
-            </p>
+        <div className="pb-6 border-b border-[#E2E8DE]">
+          <div className="flex items-center gap-2 mb-1.5">
+            <Badge variant="success" size="sm">
+              Verified Account
+            </Badge>
+            <span className="text-xs text-[#68766C]">Server-side authenticated session</span>
           </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLogout}
-              leftIcon={<LogOut className="w-3.5 h-3.5 text-[#B8423D]" />}
-              className="text-[#B8423D] border-[#E2E8DE]"
-            >
-              Sign Out
-            </Button>
-          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#27352D] font-[var(--font-heading)]">
+            Welcome back, {user?.name || user?.email.split('@')[0]}
+          </h1>
+          <p className="text-sm text-[#68766C] mt-0.5">
+            Account: <span className="font-mono text-xs">{user?.email}</span>
+          </p>
         </div>
 
         {/* Dashboard Navigation Tabs */}
