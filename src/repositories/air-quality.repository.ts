@@ -43,11 +43,11 @@ export const airQualityRepository = {
   },
 
   async getLatestByLocation(latitude: number, longitude: number, maxAgeMinutes = 180) {
-    // Check for snapshots in the nearby vicinity (~0.05 degrees ~ 5.5 km)
-    const minLat = latitude - 0.05;
-    const maxLat = latitude + 0.05;
-    const minLon = longitude - 0.05;
-    const maxLon = longitude + 0.05;
+    // Check for snapshots in the nearby vicinity (~0.02 degrees ~ 2.2 km)
+    const minLat = latitude - 0.02;
+    const maxLat = latitude + 0.02;
+    const minLon = longitude - 0.02;
+    const maxLon = longitude + 0.02;
 
     const threshold = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
 

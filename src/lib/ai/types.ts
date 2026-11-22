@@ -93,7 +93,13 @@ export interface DailyRoutinePlan {
   targetDate: string;
   summary: string;
   periods: DailyRoutinePeriod[];
-  provenance: 'CALCULATED_ESTIMATE' | 'AI_GENERATED' | 'PRE_REVIEWED_RULE';
+  provenance:
+    | 'CALCULATED_ESTIMATE'
+    | 'AI_GENERATED'
+    | 'PRE_REVIEWED_RULE'
+    | 'LIVE_OBSERVATION_ADAPTED'
+    | 'HISTORICAL_BASELINE_ADAPTED'
+    | 'PRECAUTIONARY_GUIDANCE';
   generatedAt: string;
   contextSummary: {
     aqi: number | null;

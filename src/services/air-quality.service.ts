@@ -21,6 +21,7 @@ import {
 } from '@/lib/air-quality/cpcb-aqi';
 import { selectBestStation, MAX_REPRESENTATIVE_DISTANCE_KM } from '@/lib/air-quality/station-selector';
 import { openaqProvider } from '@/lib/air-quality/providers/openaq-provider';
+import { cpcbProvider } from '@/lib/air-quality/providers/cpcb-provider';
 import { mockCpcbFixtureProvider } from '@/test/fixtures/mock-cpcb-fixture';
 import {
   evaluateFreshness,
@@ -55,24 +56,35 @@ export const airQualityService = {
   ): Promise<{
     status: 'SUCCESS' | 'NO_DATA' | 'NO_NEARBY_STATION' | 'PROVIDER_ERROR';
     provenanceStatus?: TelemetryProvenanceStatus;
+    providerStatus?: {
+      configured: boolean;
+      status: string;
+      lastError?: any;
+    };
     data?: CanonicalAirQualityRecord;
     notice?: string;
   }> {
     const isProduction = process.env.NODE_ENV === 'production';
     const allowFixture = !isProduction && (options?.allowFixture === true || process.env.ALLOW_MOCK_AQI === 'true');
+    const openAqStatus = openaqProvider.getProviderStatus();
 
     try {
       // 1. Check local database telemetry cache (< 60 minutes)
       const cached = await airQualityRepository.getLatestByLocation(latitude, longitude, 60);
 
       if (cached) {
-        const isFixture = cached.provenanceType === 'SYNTHETIC_FIXTURE' || cached.sourceProvider === 'MOCK_FIXTURE';
-        if (isFixture && isProduction) {
-          // Hard boundary: In production, synthetic fixture records from cache are never served
+        const isFixture =
+          cached.provenanceType === 'SYNTHETIC_FIXTURE' ||
+          cached.sourceProvider === 'MOCK_FIXTURE' ||
+          cached.stationId?.startsWith('TEST_');
+        if (isFixture && !allowFixture) {
+          // Hard boundary: In production or real queries, synthetic fixture / test records from cache are never served
         } else {
           const freshness = evaluateFreshness(cached.measurementTimestamp);
           const provenanceStatus: TelemetryProvenanceStatus = isFixture
             ? 'MOCK'
+            : freshness.state === 'AGING'
+            ? 'AGING'
             : freshness.isStale
             ? 'STALE'
             : 'CACHED';
@@ -86,40 +98,79 @@ export const airQualityService = {
           return {
             status: 'SUCCESS',
             provenanceStatus,
+            providerStatus: {
+              configured: openAqStatus.configured,
+              status: openAqStatus.status,
+              lastError: openAqStatus.lastError || null,
+            },
             data: record,
           };
         }
       }
 
-      // 2. Query upstream live provider: OpenAQ v3
+      // 2. Provider discovery: If fixture is explicitly requested in test mode, prioritize fixture
       let stations: MonitoringStation[] = [];
       let isLiveFeed = false;
       let usedProvider: 'OPENAQ' | 'CPCB_CAAQMS' | 'MOCK_FIXTURE' = 'OPENAQ';
 
-      try {
-        stations = await openaqProvider.getNearbyStations(latitude, longitude, MAX_REPRESENTATIVE_DISTANCE_KM);
-        if (stations.length > 0) {
-          isLiveFeed = true;
-          usedProvider = 'OPENAQ';
+      if (!isProduction && options?.allowFixture === true) {
+        stations = await mockCpcbFixtureProvider.getNearbyStations(latitude, longitude, MAX_REPRESENTATIVE_DISTANCE_KM);
+        usedProvider = 'MOCK_FIXTURE';
+      } else {
+        // Query upstream live provider: OpenAQ v3
+        if (openAqStatus.configured) {
+          try {
+            const liveStations = await openaqProvider.getNearbyStations(latitude, longitude, MAX_REPRESENTATIVE_DISTANCE_KM);
+            if (liveStations.length > 0) {
+              stations = liveStations;
+              isLiveFeed = true;
+              usedProvider = 'OPENAQ';
+            }
+          } catch {
+            stations = [];
+          }
         }
-      } catch {
-        stations = [];
+
+        // 3. Fallback evaluation: Authoritative CPCB CAAQMS Station Network
+        if (stations.length === 0) {
+          try {
+            const cpcbStations = await cpcbProvider.getNearbyStations(latitude, longitude, MAX_REPRESENTATIVE_DISTANCE_KM);
+            if (cpcbStations.length > 0) {
+              stations = cpcbStations;
+              usedProvider = 'CPCB_CAAQMS';
+              isLiveFeed = false;
+            }
+          } catch {
+            stations = [];
+          }
+        }
       }
 
-      // 3. Fallback evaluation
+      // 4. Secondary fallback: Check older database cache (up to 24h)
       if (stations.length === 0) {
-        // If an older database cache exists (up to 24h), serve it as STALE rather than failing
         const olderCached = await airQualityRepository.getLatestByLocation(latitude, longitude, 1440);
         if (olderCached) {
-          const isFixture = olderCached.provenanceType === 'SYNTHETIC_FIXTURE' || olderCached.sourceProvider === 'MOCK_FIXTURE';
-          if (isFixture && isProduction) {
-            // Hard boundary: skip synthetic fixtures in production
+          const isFixture =
+            olderCached.provenanceType === 'SYNTHETIC_FIXTURE' ||
+            olderCached.sourceProvider === 'MOCK_FIXTURE' ||
+            olderCached.stationId?.startsWith('TEST_');
+          if (isFixture && !allowFixture) {
+            // Hard boundary: skip synthetic fixtures / test records
           } else {
             const staleFreshness = evaluateFreshness(olderCached.measurementTimestamp);
-            const fallbackStatus: TelemetryProvenanceStatus = isFixture ? 'MOCK' : 'STALE';
+            const fallbackStatus: TelemetryProvenanceStatus = isFixture
+              ? 'MOCK'
+              : staleFreshness.state === 'AGING'
+              ? 'AGING'
+              : 'STALE';
             return {
               status: 'SUCCESS',
               provenanceStatus: fallbackStatus,
+              providerStatus: {
+                configured: openAqStatus.configured,
+                status: openAqStatus.status,
+                lastError: openAqStatus.lastError || null,
+              },
               data: this.reconstructRecordFromSnapshot(
                 olderCached,
                 staleFreshness,
@@ -131,45 +182,66 @@ export const airQualityService = {
           }
         }
 
-        // HARD PRODUCTION BOUNDARY: In production, mock fixtures are strictly forbidden!
-        if (isProduction || !allowFixture) {
-          return {
-            status: 'NO_DATA',
-            provenanceStatus: 'NO_DATA',
-            notice: `No verified continuous ambient air quality monitoring telemetry is currently available for coordinates (${latitude.toFixed(2)}, ${longitude.toFixed(2)}). BreatheWise AI strictly adheres to verified environmental data and will not display fabricated numbers.`,
-          };
-        }
-
-        // Test/Fixture mode explicitly enabled
-        stations = await mockCpcbFixtureProvider.getNearbyStations(latitude, longitude, MAX_REPRESENTATIVE_DISTANCE_KM);
-        usedProvider = 'MOCK_FIXTURE';
+        // When no stations exist in any provider and no cache is present:
+        return {
+          status: isProduction ? 'NO_DATA' : 'NO_NEARBY_STATION',
+          provenanceStatus: 'NO_DATA',
+          providerStatus: {
+            configured: openAqStatus.configured,
+            status: openAqStatus.status,
+            lastError: openAqStatus.lastError || null,
+          },
+          notice: `No active continuous ambient air quality monitoring station is located within the ${MAX_REPRESENTATIVE_DISTANCE_KM} km representative radius of coordinates (${latitude.toFixed(2)}, ${longitude.toFixed(2)}). BreatheWise AI strictly adheres to verified environmental data and will not display fabricated numbers.`,
+        };
       }
 
-      // 4. Select optimal monitoring station using Haversine & composite ranking
+      // 5. Select optimal monitoring station using Haversine & composite ranking
       const selection = selectBestStation(stations, latitude, longitude, MAX_REPRESENTATIVE_DISTANCE_KM);
 
       if (!selection.selected || !selection.isWithinRange) {
         return {
           status: 'NO_NEARBY_STATION',
           provenanceStatus: 'NO_DATA',
+          providerStatus: {
+            configured: openAqStatus.configured,
+            status: openAqStatus.status,
+            lastError: openAqStatus.lastError || null,
+          },
           notice: `No active continuous ambient air quality monitoring station is located within the ${MAX_REPRESENTATIVE_DISTANCE_KM} km representative radius of coordinates (${latitude.toFixed(2)}, ${longitude.toFixed(2)}). BreatheWise AI strictly adheres to verified sensor data and will not display fabricated numbers.`,
         };
       }
 
       const station = selection.selected;
 
-      // 5. Fetch telemetry measurements for the selected station
+      // 6. Fetch telemetry measurements for the selected station
       let rawTelemetry: any = null;
       if (usedProvider === 'OPENAQ') {
         rawTelemetry = await openaqProvider.getLatestStationMeasurements(station.id);
+        // If OpenAQ measurement fetch failed (e.g. auth rejected or empty sensors), fall back to CPCB CAAQMS baseline
+        if (!rawTelemetry || !rawTelemetry.measurements || Object.keys(rawTelemetry.measurements).length === 0) {
+          const cpcbStations = await cpcbProvider.getNearbyStations(latitude, longitude, MAX_REPRESENTATIVE_DISTANCE_KM);
+          const cpcbSelection = selectBestStation(cpcbStations, latitude, longitude, MAX_REPRESENTATIVE_DISTANCE_KM);
+          if (cpcbSelection.selected) {
+            rawTelemetry = await cpcbProvider.getLatestStationMeasurements(cpcbSelection.selected.id);
+            usedProvider = 'CPCB_CAAQMS';
+            isLiveFeed = false;
+          }
+        }
+      } else if (usedProvider === 'CPCB_CAAQMS') {
+        rawTelemetry = await cpcbProvider.getLatestStationMeasurements(station.id);
       } else if (usedProvider === 'MOCK_FIXTURE' && allowFixture) {
         rawTelemetry = await mockCpcbFixtureProvider.getLatestStationMeasurements(station.id);
       }
 
-      if (!rawTelemetry || !rawTelemetry.measurements) {
+      if (!rawTelemetry || !rawTelemetry.measurements || Object.keys(rawTelemetry.measurements).length === 0) {
         return {
           status: 'NO_DATA',
           provenanceStatus: 'NO_DATA',
+          providerStatus: {
+            configured: openAqStatus.configured,
+            status: openAqStatus.status,
+            lastError: openAqStatus.lastError || null,
+          },
           notice: 'Monitoring station telemetry is temporarily unavailable from upstream providers.',
         };
       }
@@ -231,6 +303,8 @@ export const airQualityService = {
       const provenanceType: ProvenanceType =
         usedProvider === 'MOCK_FIXTURE'
           ? 'SYNTHETIC_FIXTURE'
+          : usedProvider === 'CPCB_CAAQMS'
+          ? 'HISTORICAL_IMPORTED'
           : isLiveFeed
           ? 'VERIFIED_EXTERNAL_OBSERVATION'
           : 'UNKNOWN_PROVENANCE';
@@ -238,6 +312,8 @@ export const airQualityService = {
       const provenanceStatus: TelemetryProvenanceStatus =
         usedProvider === 'MOCK_FIXTURE'
           ? 'MOCK'
+          : freshness.state === 'AGING'
+          ? 'AGING'
           : freshness.isStale
           ? 'STALE'
           : isLiveFeed
@@ -266,6 +342,8 @@ export const airQualityService = {
           provider:
             usedProvider === 'OPENAQ'
               ? 'OpenAQ v3 / CPCB Network'
+              : usedProvider === 'CPCB_CAAQMS'
+              ? 'CPCB CAAQMS Station Network'
               : usedProvider === 'MOCK_FIXTURE'
               ? 'CPCB CAAQMS Baseline [TEST FIXTURE]'
               : 'CPCB CAAQMS Station Network',
@@ -277,7 +355,9 @@ export const airQualityService = {
           notice:
             usedProvider === 'MOCK_FIXTURE'
               ? 'DEMONSTRATION FIXTURE: Offline test baseline for verification purposes. Never permitted in production.'
-              : 'Live continuous telemetry retrieved via OpenAQ v3 atmospheric ingestion pipeline.',
+              : usedProvider === 'CPCB_CAAQMS'
+              ? 'Air-quality monitoring information is currently available from historical station records. Live monitoring updates are temporarily unavailable.'
+              : 'Live air-quality monitoring data is available for this location.',
         },
       };
 
@@ -315,7 +395,13 @@ export const airQualityService = {
       return {
         status: 'SUCCESS',
         provenanceStatus,
+        providerStatus: {
+          configured: openAqStatus.configured,
+          status: openAqStatus.status,
+          lastError: openAqStatus.lastError || null,
+        },
         data: record,
+        notice: record.attribution.notice,
       };
     } catch (err: any) {
       return {

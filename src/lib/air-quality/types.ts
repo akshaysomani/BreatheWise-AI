@@ -21,6 +21,7 @@ export type FreshnessState =
 
 export type TelemetryProvenanceStatus =
   | 'LIVE'      // Valid fresh provider observation meeting freshness policy (< 2 hours)
+  | 'AGING'     // Observation between 2 and 4 hours old
   | 'CACHED'    // Previously retrieved observation served from cache within valid TTL
   | 'STALE'     // Observation exceeds freshness threshold (>= 4 hours)
   | 'MOCK'      // Test or fixture measurement (HARD BLOCKED in production)

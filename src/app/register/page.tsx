@@ -357,7 +357,7 @@ export default function RegisterPage() {
                     id="register-name"
                     type="text"
                     label="Household Name or Alias"
-                    placeholder="e.g. Sharma Family or Akshay"
+                    placeholder="e.g. Sharma Family or My Household"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     leftIcon={<User className="w-4 h-4 text-[#68766C]" />}

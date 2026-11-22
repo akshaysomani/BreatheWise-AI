@@ -3,8 +3,8 @@
  * Module M4.1: Live Upstream Telemetry Integration & Strict Validation
  * 
  * Complies with OpenAQ API v3 specification:
- * - Spatial querying: GET /v3/locations?coordinates=lat,lon&radius=meters
- * - Telemetry querying: GET /v3/locations/{id}/latest
+ * - Spatial querying: GET /v3/locations?coordinates=lat,lon&radius=meters (max 25,000 meters)
+ * - Telemetry querying: GET /v3/locations/{id}/latest (resolving sensorsId to parameter metadata)
  * - Authentication: X-API-Key header (OPENAQ_API_KEY)
  * - Rate limiting: Exponential backoff with jitter on HTTP 429
  * - Timeout: 8-second AbortController guard
@@ -36,31 +36,61 @@ const PARAMETER_MAP: Record<string, PollutantCode> = {
   pb: 'Pb',
 };
 
+export interface OpenAQProviderError {
+  type: 'AUTH_ERROR' | 'UNAVAILABLE' | 'RATE_LIMITED';
+  message: string;
+  httpStatus?: number;
+}
+
 export interface OpenAQProviderStatus {
   configured: boolean;
   endpoint: string;
-  status: 'READY' | 'MISSING_API_KEY';
+  status: 'READY' | 'MISSING_API_KEY' | 'AUTH_ERROR' | 'UNAVAILABLE';
+  lastError?: OpenAQProviderError | null;
   retryPolicy: {
     maxRetries: number;
     timeoutMs: number;
   };
 }
 
+interface SensorMetadata {
+  id: number;
+  parameterName: string;
+  units: string;
+}
+
 export class OpenAQProvider implements AirQualityProvider {
   readonly name = 'OPENAQ_V3';
-  private apiKey?: string;
+  private explicitApiKey?: string;
+  private lastError: OpenAQProviderError | null = null;
+  // Cache sensor definitions by location ID: cleanLocationId -> Map<sensorId, SensorMetadata>
+  private locationSensorsMap: Map<string, Map<number, SensorMetadata>> = new Map();
 
   constructor(apiKey?: string) {
-    this.apiKey = apiKey || process.env.OPENAQ_API_KEY;
+    this.explicitApiKey = apiKey;
+  }
+
+  private getEffectiveApiKey(): string | undefined {
+    const raw = this.explicitApiKey || process.env.OPENAQ_API_KEY;
+    if (!raw) return undefined;
+    const cleaned = raw.replace(/^["']|["']$/g, '').trim();
+    return cleaned.length > 0 ? cleaned : undefined;
   }
 
   getProviderStatus(): OpenAQProviderStatus {
-    const key = this.apiKey?.trim();
+    const key = this.getEffectiveApiKey();
     const isConfigured = Boolean(key && key.length > 0);
+    let status: 'READY' | 'MISSING_API_KEY' | 'AUTH_ERROR' | 'UNAVAILABLE' = isConfigured ? 'READY' : 'MISSING_API_KEY';
+    if (this.lastError) {
+      if (this.lastError.type === 'AUTH_ERROR') status = 'AUTH_ERROR';
+      else if (this.lastError.type === 'UNAVAILABLE') status = 'UNAVAILABLE';
+    }
+
     return {
       configured: isConfigured,
       endpoint: OPENAQ_BASE_URL,
-      status: isConfigured ? 'READY' : 'MISSING_API_KEY',
+      status,
+      lastError: this.lastError,
       retryPolicy: {
         maxRetries: MAX_RETRIES,
         timeoutMs: DEFAULT_TIMEOUT_MS,
@@ -71,10 +101,11 @@ export class OpenAQProvider implements AirQualityProvider {
   private getHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'User-Agent': 'BreatheWiseAI/1.4.1 (AirQualityIntelligence/Challenge6)',
+      'User-Agent': 'BreatheWiseAI/1.4.1 (AirQualityIntelligence/AtmosphericTelemetry)',
     };
-    if (this.apiKey && this.apiKey.trim().length > 0) {
-      headers['X-API-Key'] = this.apiKey.trim();
+    const key = this.getEffectiveApiKey();
+    if (key) {
+      headers['X-API-Key'] = key;
     }
     return headers;
   }
@@ -91,22 +122,52 @@ export class OpenAQProvider implements AirQualityProvider {
 
       clearTimeout(timeout);
 
+      if (response.status === 401 || response.status === 403) {
+        this.lastError = {
+          type: 'AUTH_ERROR',
+          message: `OpenAQ v3 rejected API key credentials (HTTP ${response.status}). Configure valid OPENAQ_API_KEY in Vercel.`,
+          httpStatus: response.status,
+        };
+        return response;
+      }
+
       if (response.status === 429 && attempt < MAX_RETRIES) {
-        // Read Retry-After header or apply exponential jitter
         const retryAfterSec = Number(response.headers.get('Retry-After')) || 1;
         const delayMs = retryAfterSec * 1000 + Math.random() * 500;
         await new Promise((res) => setTimeout(res, delayMs));
         return this.fetchWithRetry(url, attempt + 1);
       }
 
+      if (response.status === 429) {
+        this.lastError = {
+          type: 'RATE_LIMITED',
+          message: 'OpenAQ v3 API rate limit exceeded.',
+          httpStatus: 429,
+        };
+      } else if (response.status >= 500) {
+        this.lastError = {
+          type: 'UNAVAILABLE',
+          message: `OpenAQ upstream server error (HTTP ${response.status}).`,
+          httpStatus: response.status,
+        };
+      } else if (response.ok) {
+        // Reset lastError on success
+        this.lastError = null;
+      }
+
       return response;
-    } catch (err) {
+    } catch (err: any) {
       clearTimeout(timeout);
       if (attempt < MAX_RETRIES) {
         const jitter = Math.random() * 500;
         await new Promise((res) => setTimeout(res, 500 * (attempt + 1) + jitter));
         return this.fetchWithRetry(url, attempt + 1);
       }
+      this.lastError = {
+        type: 'UNAVAILABLE',
+        message: err?.name === 'AbortError' ? 'OpenAQ v3 request timed out (8s).' : `OpenAQ upstream network error: ${err?.message || 'Unreachable'}`,
+        httpStatus: 504,
+      };
       throw err;
     }
   }
@@ -116,13 +177,19 @@ export class OpenAQProvider implements AirQualityProvider {
     longitude: number,
     radiusKm = 50.0
   ): Promise<MonitoringStation[]> {
-    // If API key is not configured, do not issue unauthenticated calls that will fail with 401
-    if (!this.apiKey || this.apiKey.trim().length === 0) {
+    const key = this.getEffectiveApiKey();
+    if (!key) {
+      this.lastError = {
+        type: 'AUTH_ERROR',
+        message: 'OPENAQ_API_KEY is not configured in environment variables.',
+        httpStatus: 401,
+      };
       return [];
     }
 
     try {
-      const radiusMeters = Math.min(Math.round(radiusKm * 1000), 50000);
+      // OpenAQ v3 enforces maximum radius <= 25,000 meters (25 km)
+      const radiusMeters = Math.min(Math.round(radiusKm * 1000), 25000);
       const url = `${OPENAQ_BASE_URL}/locations?coordinates=${latitude},${longitude}&radius=${radiusMeters}&limit=10`;
 
       const res = await this.fetchWithRetry(url);
@@ -134,20 +201,34 @@ export class OpenAQProvider implements AirQualityProvider {
       const results = Array.isArray(json?.results) ? json.results : [];
 
       return results.map((item: any) => {
+        const cleanId = String(item.id);
         const stationLat = Number(item?.coordinates?.latitude) || latitude;
         const stationLon = Number(item?.coordinates?.longitude) || longitude;
         const distanceKm = calculateHaversineDistanceKm(latitude, longitude, stationLat, stationLon);
 
         const supportedPollutants: PollutantCode[] = [];
+        const sensorMap = new Map<number, SensorMetadata>();
+
         if (Array.isArray(item?.sensors)) {
           for (const s of item.sensors) {
-            const pName = String(s?.parameter?.name || '').toLowerCase();
+            const pName = String(s?.parameter?.name || s?.name || '').toLowerCase();
+            const units = String(s?.parameter?.units || s?.units || 'µg/m³');
             const code = PARAMETER_MAP[pName];
             if (code && !supportedPollutants.includes(code)) {
               supportedPollutants.push(code);
             }
+            if (typeof s?.id === 'number') {
+              sensorMap.set(s.id, {
+                id: s.id,
+                parameterName: pName,
+                units,
+              });
+            }
           }
         }
+
+        // Cache sensor definitions for latest observation resolution
+        this.locationSensorsMap.set(cleanId, sensorMap);
 
         return {
           id: `openaq_${item.id}`,
@@ -164,7 +245,6 @@ export class OpenAQProvider implements AirQualityProvider {
         };
       });
     } catch {
-      // Graceful error recovery: Return empty array so caller returns transparent NO_DATA
       return [];
     }
   }
@@ -174,15 +254,48 @@ export class OpenAQProvider implements AirQualityProvider {
     measurements: Partial<Record<PollutantCode, CanonicalPollutantMeasurement>>;
     fetchedAt: Date;
   } | null> {
-    if (!this.apiKey || this.apiKey.trim().length === 0) {
+    const key = this.getEffectiveApiKey();
+    if (!key) {
       return null;
     }
 
     try {
       const cleanId = stationId.replace('openaq_', '');
-      const url = `${OPENAQ_BASE_URL}/locations/${cleanId}/latest`;
 
-      const res = await this.fetchWithRetry(url);
+      // Ensure we have the sensor definitions for this location
+      let sensorMap = this.locationSensorsMap.get(cleanId);
+      let locationMetadata: any = null;
+
+      if (!sensorMap || sensorMap.size === 0) {
+        // Query location details to obtain sensor ID mappings
+        const locRes = await this.fetchWithRetry(`${OPENAQ_BASE_URL}/locations/${cleanId}`);
+        if (locRes.ok) {
+          const locJson = await locRes.json();
+          const locItem = Array.isArray(locJson?.results) ? locJson.results[0] : locJson?.results;
+          if (locItem) {
+            locationMetadata = locItem;
+            sensorMap = new Map<number, SensorMetadata>();
+            if (Array.isArray(locItem.sensors)) {
+              for (const s of locItem.sensors) {
+                const pName = String(s?.parameter?.name || s?.name || '').toLowerCase();
+                const units = String(s?.parameter?.units || s?.units || 'µg/m³');
+                if (typeof s?.id === 'number') {
+                  sensorMap.set(s.id, {
+                    id: s.id,
+                    parameterName: pName,
+                    units,
+                  });
+                }
+              }
+            }
+            this.locationSensorsMap.set(cleanId, sensorMap);
+          }
+        }
+      }
+
+      // Query latest telemetry measurements for this location
+      const latestUrl = `${OPENAQ_BASE_URL}/locations/${cleanId}/latest`;
+      const res = await this.fetchWithRetry(latestUrl);
       if (!res.ok) return null;
 
       const json = await res.json();
@@ -192,11 +305,14 @@ export class OpenAQProvider implements AirQualityProvider {
       const nowIso = new Date().toISOString();
 
       for (const item of results) {
-        const pName = String(item?.parameter?.name || '').toLowerCase();
+        // In OpenAQ v3, /latest returns sensorsId. Resolve parameter from sensor mapping.
+        const sensor = sensorMap?.get(item?.sensorsId);
+        const pName = String(item?.parameter?.name || sensor?.parameterName || '').toLowerCase();
+        const rawUnit = String(item?.unit || sensor?.units || 'µg/m³');
         const code = PARAMETER_MAP[pName];
+
         if (code) {
-          // Strictly validate observation value and timestamp
-          const validated = validateMeasurement(code, item?.value, item?.unit || 'µg/m³', item?.datetime?.utc);
+          const validated = validateMeasurement(code, item?.value, rawUnit, item?.datetime?.utc);
           if (!validated.isValid) {
             continue; // Quarantine invalid/unphysical measurement
           }
@@ -214,22 +330,25 @@ export class OpenAQProvider implements AirQualityProvider {
             observationTimestampUtc: validated.observationTimestampUtc,
             ingestionTimestampUtc: nowIso,
             isExceededNAAQS: false,
-            rawParameterName: item.parameter?.name,
+            rawParameterName: pName,
             qualityFlags: validated.qualityFlags,
           };
         }
       }
 
+      const stationName = locationMetadata?.name || `OpenAQ Station #${cleanId}`;
+      const stationCity = locationMetadata?.locality || locationMetadata?.city || 'Regional Center';
+
       return {
         station: {
           id: stationId,
-          name: json?.location?.name || `OpenAQ Station #${cleanId}`,
-          city: json?.location?.locality || 'Regional Station',
+          name: stationName,
+          city: stationCity,
           state: 'India',
           operatingAgency: 'CPCB / SPCB via OpenAQ',
           coordinates: {
-            latitude: Number(json?.location?.coordinates?.latitude) || 0,
-            longitude: Number(json?.location?.coordinates?.longitude) || 0,
+            latitude: Number(locationMetadata?.coordinates?.latitude) || 0,
+            longitude: Number(locationMetadata?.coordinates?.longitude) || 0,
           },
           supportedPollutants: Object.keys(measurements) as PollutantCode[],
           lastReportedUtc: nowIso,

@@ -5,6 +5,7 @@ import {
 } from './fixtures/mock-cpcb-fixture';
 import { airQualityService } from '@/services/air-quality.service';
 import { openaqProvider } from '@/lib/air-quality/providers/openaq-provider';
+import { cpcbProvider } from '@/lib/air-quality/providers/cpcb-provider';
 import prisma from '@/lib/db';
 
 describe('Mock Data Hard Production Boundary & Isolation (M4.1 Audit)', () => {
@@ -66,6 +67,7 @@ describe('Mock Data Hard Production Boundary & Isolation (M4.1 Audit)', () => {
     it('strictly returns NO_DATA in production when upstream live provider is unavailable and cache is empty', async () => {
       (process.env as any).NODE_ENV = 'production';
       vi.spyOn(openaqProvider, 'getNearbyStations').mockResolvedValue([]);
+      vi.spyOn(cpcbProvider, 'getNearbyStations').mockResolvedValue([]);
 
       // Test with isolated urban Delhi coordinates (28.6139, 77.2090)
       const result = await airQualityService.getAirQuality(28.6139, 77.2090, 'Delhi');
@@ -81,6 +83,7 @@ describe('Mock Data Hard Production Boundary & Isolation (M4.1 Audit)', () => {
     it('never assigns MOCK provenance status in production mode', async () => {
       (process.env as any).NODE_ENV = 'production';
       vi.spyOn(openaqProvider, 'getNearbyStations').mockResolvedValue([]);
+      vi.spyOn(cpcbProvider, 'getNearbyStations').mockResolvedValue([]);
 
       const result = await airQualityService.getAirQuality(28.6139, 77.2090);
       expect(result.provenanceStatus).not.toBe('MOCK');

@@ -68,6 +68,20 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
   const [routinePlan, setRoutinePlan] = useState<DailyRoutinePlan | null>(null);
   const [loadingRoutine, setLoadingRoutine] = useState(false);
   const [routineError, setRoutineError] = useState<string | null>(null);
+  const [routineVariation, setRoutineVariation] = useState<number>(0);
+
+  const getProvenanceBadgeConfig = (prov: string) => {
+    switch (prov) {
+      case 'LIVE_OBSERVATION_ADAPTED':
+        return { label: 'Live Observation Adapted', variant: 'success' as const };
+      case 'HISTORICAL_BASELINE_ADAPTED':
+        return { label: 'Historical Baseline Guidance', variant: 'warning' as const };
+      case 'PRECAUTIONARY_GUIDANCE':
+      case 'PRE_REVIEWED_RULE':
+      default:
+        return { label: 'Precautionary Advisory', variant: 'accent' as const };
+    }
+  };
 
   // -------------------------------------------------------------------------
   // 3. Indoor Advisor State
@@ -91,7 +105,7 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
   // Scroll chat to bottom on new message
   useEffect(() => {
     if (activeMode === 'chat') {
-      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      chatBottomRef.current?.scrollIntoView?.({ behavior: 'smooth' });
     }
   }, [messages, isSending, activeMode]);
 
@@ -184,14 +198,24 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
   // -------------------------------------------------------------------------
   // Handlers: Daily Routine
   // -------------------------------------------------------------------------
-  const fetchDailyRoutine = async () => {
+  const fetchDailyRoutine = async (isRegeneration = false) => {
     setLoadingRoutine(true);
     setRoutineError(null);
+    const nextVar = isRegeneration ? (routineVariation + 1) % 3 : routineVariation;
+    if (isRegeneration) {
+      setRoutineVariation(nextVar);
+    }
     try {
       const res = await fetch('/api/assistant/routine', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          latitude: initialLat,
+          longitude: initialLon,
+          locationName: userCity,
+          variationIndex: nextVar,
+          isRegeneration,
+        }),
       });
 
       const json = await res.json();
@@ -201,7 +225,7 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
         setRoutineError(json?.error?.message || 'Could not load daily routine.');
       }
     } catch {
-      setRoutineError('Network error while generating daily routine.');
+      setRoutineError('Network error while generating daily routine. Please try again.');
     } finally {
       setLoadingRoutine(false);
     }
@@ -537,13 +561,19 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
             <Button
               variant="outline"
               size="sm"
-              onClick={fetchDailyRoutine}
+              onClick={() => fetchDailyRoutine(true)}
               disabled={loadingRoutine}
               leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${loadingRoutine ? 'animate-spin' : ''}`} />}
             >
               Regenerate Daily Plan
             </Button>
           </div>
+
+          {routineError && (
+            <Alert variant="danger">
+              <span>{routineError}</span>
+            </Alert>
+          )}
 
           {loadingRoutine ? (
             <div className="p-16 text-center">
@@ -553,16 +583,19 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
           ) : routinePlan ? (
             <div className="space-y-4">
               {/* Context Summary Bar */}
-              <div className="p-4 bg-[#EEF3EA] rounded-xl border border-[#397A55]/20 flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-[#397A55]">Plan Grounding:</span>
-                  <span>{routinePlan.summary}</span>
+              <div className="p-4 bg-[#EEF3EA] rounded-xl border border-[#397A55]/20 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 max-w-xl">
+                  <span className="font-bold text-[#397A55] shrink-0">Plan Grounding:</span>
+                  <span className="text-[#27352D]">{routinePlan.summary}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="accent" size="sm">
-                    {routinePlan.provenance}
+                <div className="flex items-center gap-3 shrink-0">
+                  <Badge variant={getProvenanceBadgeConfig(routinePlan.provenance).variant} size="sm">
+                    {getProvenanceBadgeConfig(routinePlan.provenance).label}
                   </Badge>
-                  <span className="text-[#68766C]">Date: {routinePlan.targetDate}</span>
+                  <span className="text-[#68766C] flex items-center gap-1 font-medium">
+                    <Clock className="w-3 h-3 text-[#397A55]" />
+                    Generated: {new Date(routinePlan.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
                 </div>
               </div>
 
@@ -634,12 +667,16 @@ export function AssistantWorkspace({ initialLat, initialLon, userCity }: Assista
                   </Card>
                 ))}
               </div>
+
+              {/* Scientific Guidance & Medical Disclaimer */}
+              <div className="p-3 bg-[#FAFBF9] rounded-xl border border-[#E2E8DE] text-[11px] text-[#68766C] flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-[#397A55] shrink-0 mt-0.5" />
+                <p className="leading-relaxed">
+                  {routinePlan.disclaimer}
+                </p>
+              </div>
             </div>
-          ) : (
-            <Alert variant="danger">
-              <span>{routineError || 'Failed to generate daily routine.'}</span>
-            </Alert>
-          )}
+          ) : null}
         </div>
       )}
 

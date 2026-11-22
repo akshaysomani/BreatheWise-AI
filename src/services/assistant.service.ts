@@ -11,6 +11,7 @@ import { buildAssistantContext } from '@/lib/ai/context-builder';
 import { generateAssistantResponse, getGeminiProviderStatus } from '@/lib/ai/gemini-client';
 import { deterministicFallbackEngine } from '@/lib/ai/deterministic-fallback';
 import { DailyRoutinePlan, IndoorAdviceReport } from '@/lib/ai/types';
+import { airQualityService } from '@/services/air-quality.service';
 import { logger } from '@/lib/logger';
 
 export const assistantService = {
@@ -129,7 +130,20 @@ export const assistantService = {
     userId: string,
     options?: RoutineGenerateInput
   ): Promise<DailyRoutinePlan> {
-    const contextPayload = await buildAssistantContext(userId);
+    const coords =
+      options?.latitude !== undefined && options?.longitude !== undefined
+        ? { lat: options.latitude, lon: options.longitude }
+        : undefined;
+
+    if (coords) {
+      try {
+        await airQualityService.getAirQuality(coords.lat, coords.lon, options?.locationName);
+      } catch (err) {
+        logger.warn('Failed to pre-query air quality for routine generation', { error: err });
+      }
+    }
+
+    const contextPayload = await buildAssistantContext(userId, coords);
     const plan = deterministicFallbackEngine.generateDailyRoutine(contextPayload, options);
 
     // Persist each routine period as a recommendation record

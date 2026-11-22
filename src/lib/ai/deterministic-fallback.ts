@@ -673,6 +673,11 @@ export const deterministicFallbackEngine = {
   /**
    * Generates a personalized 3-period daily routine (morning, afternoon, evening).
    */
+  /**
+   * Generates a context-aware 3-period daily routine (morning, afternoon, evening).
+   * Fully responsive to pollutant specifics (PM2.5, PM10, O3, NO2), household equipment,
+   * data provenance (live vs historical vs precautionary), and regeneration variation.
+   */
   generateDailyRoutine(
     payload: AiContextPayload,
     options?: RoutineGenerateInput
@@ -680,106 +685,398 @@ export const deterministicFallbackEngine = {
     const env = payload.environment;
     const house = payload.household;
     const aqi = env.aqi;
+    const dominant = env.dominantPollutant || 'PM2.5';
     const isElevated = aqi === null || aqi > 100;
+    const isVeryHigh = aqi !== null && aqi > 200;
+    const isOzoneDominant = dominant === 'O3';
+    const hasHEPA = Boolean(house.hasHEPAFilter);
+    const hasAsthma = Boolean(house.hasAsthmaOrRespiratory);
+    const hasInfantOrSenior = Boolean(house.hasInfantOrPediatric || house.hasSeniorMember);
     const targetDate = options?.targetDate || new Date().toISOString().split('T')[0];
+    const locationName = options?.locationName || env.stationName || house.city || 'Local Area';
+    const variation = (options?.variationIndex ?? 0) % 3;
+
+    // Provenance and grounding determination
+    let planProvenance: DailyRoutinePlan['provenance'] = 'PRECAUTIONARY_GUIDANCE';
+    let evidenceContext = '';
+    let sourceLabel = 'Heuristic Model';
+
+    if (env.status === 'AVAILABLE' && aqi !== null) {
+      if (env.isLive || (env.provenance === 'LIVE' && env.freshnessState === 'FRESH')) {
+        planProvenance = 'LIVE_OBSERVATION_ADAPTED';
+        evidenceContext = `Live monitoring observation from ${env.stationName || locationName}: AQI ${aqi} (${env.category}, dominant: ${dominant}).`;
+        sourceLabel = `Live Monitoring: ${env.stationName || 'Regional Hub'}`;
+      } else {
+        planProvenance = 'HISTORICAL_BASELINE_ADAPTED';
+        evidenceContext = `Historical station record from ${env.stationName || locationName}: baseline AQI ${aqi} (${env.category}, dominant: ${dominant}). Live updates temporarily inactive.`;
+        sourceLabel = `Historical Baseline: ${env.stationName || 'CPCB Station Archive'}`;
+      }
+    } else {
+      planProvenance = 'PRECAUTIONARY_GUIDANCE';
+      evidenceContext = `Air-quality monitoring data currently unavailable for ${locationName}. Conservative precautionary diurnal guidance applied.`;
+      sourceLabel = 'Scientific Precautionary Advisory';
+    }
+
+    // Ventilation safety caveat
+    const ventilationSafetyNote =
+      'Safety Note: Do not keep home hermetically sealed indefinitely. If indoor space becomes stuffy or CO2 exceeds 1,000 ppm, open windows for a brief 5-minute cross-ventilation flush.';
+
+    // -------------------------------------------------------------------------
+    // 1. MORNING (06:00 AM – 11:00 AM)
+    // -------------------------------------------------------------------------
+    let morningAction = '';
+    let morningReason = '';
+    let morningEvidence = evidenceContext;
+    let morningBenefit = '';
+    let morningSteps: string[] = [];
+    let morningAssumptions = '';
+    let morningUncertainty = '';
+
+    if (variation === 0) {
+      // Default: Commute & Exercise Focus
+      morningAction = isElevated
+        ? 'Exercise Indoors & Commute in Sealed Cabin (Metro/Recirculating Car)'
+        : 'Normal Outdoor Commute & Morning Walk Permitted';
+      morningReason = isElevated
+        ? 'Morning surface temperature inversions trap diesel exhaust and combustion particulate at human breathing height.'
+        : 'Ambient air quality meets safe baseline criteria for morning physical activity.';
+      morningBenefit = isElevated
+        ? 'Avoids peak ground-level particulate accumulation during morning rush hour.'
+        : 'Cardiovascular benefit of brisk morning exercise in clean atmospheric conditions.';
+      morningSteps = isElevated
+        ? [
+            'Keep streetward windows closed during morning traffic peak (07:30 AM – 10:00 AM).',
+            hasHEPA
+              ? `Engage mechanical True HEPA purifier in active living quarters (target CADR: ${house.requiredCADR_CFM ?? 200} CFM).`
+              : 'Damp-mop high-traffic floor areas to suppress settled dust without resuspending particles.',
+            'If commuting, set vehicle ventilation to recirculate or board filtered mass-transit metro.',
+            ventilationSafetyNote,
+          ]
+        : [
+            'Enjoy outdoor walking, jogging, or cycling before traffic density increases.',
+            'Open opposing windows for 20 minutes to exchange stale overnight indoor air.',
+            'Maintain normal hydration and natural breathing rhythm.',
+          ];
+      morningAssumptions = 'Diurnal boundary layer dynamics in urban centers; ground inversion strongest at dawn.';
+      morningUncertainty = 'Wind velocity and morning fog thickness cause localized microclimate variations.';
+    } else if (variation === 1) {
+      // Variation 1: Departure Timing & Respiratory Protection Focus
+      morningAction = isElevated
+        ? (isOzoneDominant
+            ? 'Early Morning Outdoor Conditioning (Complete Prior to Midday Ozone Rise)'
+            : 'Shift Morning Outdoor Exposure & Use Particulate Respiratory Protection')
+        : 'Morning Outdoor Conditioning Window & Lung Expansion Exercise';
+      morningReason = isElevated
+        ? (isOzoneDominant
+            ? 'Ground-level ozone is at diurnal minimum before solar UV radiation triggers secondary photochemical synthesis.'
+            : `Fine particulate (${dominant}) concentration peaks during morning rush hour; well-fitted particulate masks filter >95% of respirable aerosols.`)
+        : 'Ambient air quality is favorable for outdoor conditioning prior to diurnal solar heating.';
+      morningBenefit = isElevated
+        ? 'Significantly reduces inhaled particulate mass without completely canceling necessary morning transit.'
+        : 'Optimal cardiovascular conditioning while outdoor particulate levels are lowest.';
+      morningSteps = isElevated
+        ? [
+            'If walking or waiting near roadways, wear a certified, well-fitted particulate respirator (N95 or FFP2).',
+            'Shift non-essential outdoor errands to after 11:00 AM when solar heating begins mixing surface layers.',
+            hasAsthma
+              ? 'Keep prescribed bronchodilator/inhaler accessible before encountering cold or polluted morning air.'
+              : 'Avoid heavy mouth-breathing aerobic exertion alongside active vehicle corridors.',
+            ventilationSafetyNote,
+          ]
+        : [
+            'Perform outdoor cardio or stretching routines in green spaces or low-traffic neighborhoods.',
+            'Take deep breaths of fresh ambient air; particulate levels are well within safe thresholds.',
+          ];
+      morningAssumptions = 'Rush-hour vehicle emissions peak between 08:00 AM and 09:30 AM.';
+      morningUncertainty = 'Roadwork, construction, or localized trash burning can cause micro-spikes.';
+    } else {
+      // Variation 2: Indoor Source Control & Kitchen Perimeter Focus
+      morningAction = isElevated
+        ? 'Activate Kitchen Exhaust During Breakfast Prep & Maintain Sealed Perimeter'
+        : 'Morning Whole-Home Cross-Breeze Air Exchange (15–20 Mins)';
+      morningReason = isElevated
+        ? 'Unvented breakfast cooking (frying, toasting, gas combustion) combined with outdoor smog penetration creates acute indoor PM2.5 spikes.'
+        : 'Mild morning atmospheric mixing provides ideal outdoor air for flushing indoor overnight carbon dioxide.';
+      morningBenefit = isElevated
+        ? 'Eliminates compounding indoor combustion sources to preserve clean indoor air baseline.'
+        : 'Lowers indoor CO2 below 800 ppm, improving cognitive alertness and morning productivity.';
+      morningSteps = isElevated
+        ? [
+            'Run range hood exhaust fan on high throughout meal preparation and for 10 minutes afterwards.',
+            'Keep kitchen doors closed to prevent cooking aerosols from migrating into bedrooms.',
+            hasHEPA
+              ? 'Run HEPA air purifier on medium fan speed in living zones.'
+              : 'Avoid burning mosquito coils, incense sticks, or scented candles indoors.',
+            ventilationSafetyNote,
+          ]
+        : [
+            'Open windows on opposing sides of the home for 15 to 20 minutes.',
+            'Allow outdoor air to circulate through living and dining areas.',
+            'Close windows as traffic builds towards mid-morning.',
+          ];
+      morningAssumptions = 'Indoor cooking generates 10–50 µg/m³ of transient particulate without mechanical exhaust.';
+      morningUncertainty = 'Kitchen volume and range hood airflow rate determine particulate clearance time.';
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. AFTERNOON (12:00 PM – 04:00 PM)
+    // -------------------------------------------------------------------------
+    let afternoonAction = '';
+    let afternoonReason = '';
+    let afternoonEvidence = evidenceContext;
+    let afternoonBenefit = '';
+    let afternoonSteps: string[] = [];
+    let afternoonAssumptions = '';
+    let afternoonUncertainty = '';
+
+    const isCleanAfternoon = aqi !== null && aqi <= 100 && !isOzoneDominant;
+
+    if (variation === 0) {
+      // Default: Window Envelope & Continuous Filtration Focus
+      afternoonAction = isCleanAfternoon
+        ? 'Conditional Midday Cross-Ventilation (15–20 Mins if Verified Clean)'
+        : 'Maintain Closed Windows and Continuous HEPA Air Filtration';
+      afternoonReason = isCleanAfternoon
+        ? 'Solar convective mixing expands vertical atmospheric boundary layer, diluting ground concentrations to daily minimum. Safe to exchange air only because ambient AQI is verified <= 100.'
+        : 'Ambient pollution levels exceed safe ventilation thresholds (AQI > 100 or unverified); opening windows will introduce heavy particulate and gaseous contaminants.';
+      afternoonBenefit = isCleanAfternoon
+        ? 'Flushes accumulated indoor carbon dioxide and VOCs without particulate ingress.'
+        : `Protects indoor PM2.5 below ${house.indoorPM25Target} µg/m³ by preventing outdoor contaminant penetration.`;
+      afternoonSteps = isCleanAfternoon
+        ? [
+            'Open opposing windows for 15-20 minutes to achieve cross-ventilation, provided outdoor air is visibly clear and local AQI <= 100.',
+            'Verify outdoor ozone levels are not elevated during peak afternoon sunlight.',
+            'Close windows promptly before 4:00 PM as ambient traffic increases and evening cooling begins.',
+          ]
+        : [
+            'Keep exterior windows and balcony doors firmly closed against ambient ingress.',
+            hasHEPA
+              ? 'Run mechanical True HEPA air purifier on continuous medium setting.'
+              : 'Keep interior doors closed to subdivide home into smaller, cleaner zones.',
+            ventilationSafetyNote,
+          ];
+      afternoonAssumptions = 'Thermal buoyancy peaks during solar zenith; ambient AQI <= 100 required for window opening.';
+      afternoonUncertainty = 'Curbside vehicle exhaust or neighborhood biomass burning can spike local concentrations even if regional AQI is moderate.';
+    } else if (variation === 1) {
+      // Variation 1: Photochemical Ozone & Thermal Convection Focus
+      afternoonAction = isOzoneDominant || (isElevated && aqi !== null && aqi > 150)
+        ? 'Avoid High-Ventilation Outdoor Exertion During Peak Solar Ozone Zenith'
+        : (isCleanAfternoon
+            ? 'Midday Outdoor Walk During Peak Boundary Layer Dilution'
+            : 'Limit Outdoor Aerobic Exertion & Maintain Regular Hydration');
+      afternoonReason = isOzoneDominant
+        ? 'Solar ultraviolet radiation reaches maximum intensity between 12:00 PM and 04:00 PM, accelerating photochemical ozone formation from ambient precursor gases.'
+        : (isElevated
+            ? 'Higher respiratory rates during midday outdoor exertion draw fine aerosols deep into bronchial and alveolar pathways.'
+            : 'Atmospheric boundary layer height reaches 1.5–2.0 km midday, providing the cleanest ambient air volume of the diurnal cycle.');
+      afternoonBenefit = isOzoneDominant || isElevated
+        ? 'Prevents acute airway inflammation, chest tightness, and oxidative lung damage.'
+        : 'Stimulates vitamin D synthesis and circulation in verified clean outdoor conditions.';
+      afternoonSteps = isOzoneDominant || isElevated
+        ? [
+            'Conduct meetings, workouts, and social activities inside temperature-conditioned spaces.',
+            'Drink water regularly; adequate systemic hydration supports respiratory mucociliary clearance.',
+            hasInfantOrSenior
+              ? 'Ensure vulnerable household members remain indoors in cool, filtered spaces.'
+              : 'If outdoor travel is mandatory, pace physical exertion to avoid heavy oral breathing.',
+            ventilationSafetyNote,
+          ]
+        : [
+            'Take a 15–20 minute outdoor stroll in shaded, green areas away from major thoroughfares.',
+            'Enjoy natural daylight to maintain healthy circadian melatonin cycles.',
+          ];
+      afternoonAssumptions = 'Photochemical reaction rates correlate with solar zenith angle.';
+      afternoonUncertainty = 'Cloud cover and wind gusts can temporarily suppress or disperse localized ozone pools.';
+    } else {
+      // Variation 2: Workplace & Indoor Sanctuary Balancing Focus
+      afternoonAction = isCleanAfternoon
+        ? 'Natural Light Rejuvenation & Brief Outdoor Break'
+        : 'Maintain Filtered Indoor Sanctuary with Intermittent Air Circulation';
+      afternoonReason = isCleanAfternoon
+        ? 'Mild outdoor air quality and natural sunlight restore alertness without exposure penalties.'
+        : 'Creating a designated, well-sealed clean room reduces cumulative daily particulate dosage significantly.';
+      afternoonBenefit = isCleanAfternoon
+        ? 'Refreshes mental focus and relieves screen fatigue in safe ambient air.'
+        : 'Maintains low particulate exposure during peak commercial and delivery traffic hours.';
+      afternoonSteps = isCleanAfternoon
+        ? [
+            'Step outdoors into a quiet courtyard, park, or veranda for fresh air.',
+            'Open non-streetward windows briefly to flush home office areas.',
+          ]
+        : [
+            'Spend working and resting hours in the central interior room with lowest window leakage.',
+            hasHEPA
+              ? `Operate True HEPA filter continuously; verify air outlet is pointing towards occupied breathing area.`
+              : 'Use ceiling fans or oscillating fans to circulate interior air without pulling in outdoor dust.',
+            'Wipe desks and computer screens with a damp microfiber cloth to remove settled dust.',
+            ventilationSafetyNote,
+          ];
+      afternoonAssumptions = 'Interior rooms without exterior walls typically exhibit 30% lower infiltration rates.';
+      afternoonUncertainty = 'Building envelope tightness varies significantly across architectural styles.';
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. EVENING (05:00 PM – 10:00 PM)
+    // -------------------------------------------------------------------------
+    let eveningAction = '';
+    let eveningReason = '';
+    let eveningEvidence = evidenceContext;
+    let eveningBenefit = '';
+    let eveningSteps: string[] = [];
+    let eveningAssumptions = '';
+    let eveningUncertainty = '';
+
+    if (variation === 0) {
+      // Default: Bedroom Preparation & Purifier Sleep Focus
+      eveningAction = isElevated
+        ? (hasHEPA
+            ? 'Seal Bedroom Windows & Engage HEPA Purifier in Sleep Mode at 5.0 ACH'
+            : 'Seal Sleeping Quarters & Suppress Indoor Particulate Sources')
+        : 'Evening Leisure Walk & Relaxed Natural Ventilation';
+      eveningReason = isElevated
+        ? 'Evening radiative surface cooling collapses the atmospheric boundary layer, concentrating traffic exhaust and heating smoke overnight.'
+        : 'Ambient air quality remains favorable as surface temperatures cool and traffic clears.';
+      eveningBenefit = isElevated
+        ? `Guarantees 8 hours of clean, restorative sleep air with PM2.5 < ${house.indoorPM25Target} µg/m³.`
+        : 'Promotes deep, relaxed sleep with natural fresh air circulation.';
+      eveningSteps = isElevated
+        ? [
+            'Close bedroom doors and windows firmly before 06:00 PM.',
+            hasHEPA
+              ? `Turn HEPA purifier on continuous medium or whisper-quiet sleep mode (target CADR: ${house.requiredCADR_CFM ?? 200} CFM).`
+              : 'Place a rolled towel or draft-stopper at the base of bedroom doors facing corridors.',
+            'Strictly avoid burning candles, incense sticks, or mosquito repellents in sleeping quarters.',
+            ventilationSafetyNote,
+          ]
+        : [
+            'Open bedroom windows 30 minutes before sleep to cool the room naturally.',
+            'Take an evening walk before bedtime in low-traffic neighborhood streets.',
+          ];
+      eveningAssumptions = 'Occupant spends 7–8 consecutive hours in sleeping quarters.';
+      eveningUncertainty = 'Bedroom door opening frequency affects continuous filtration and seal efficiency.';
+    } else if (variation === 1) {
+      // Variation 1: Post-Commute Decontamination & Airway Recovery Focus
+      eveningAction = isElevated
+        ? 'Post-Commute Particulate Shedding & Saline Airway Rinse'
+        : 'Evening Outdoor Socializing & Bedroom Air Exchange';
+      eveningReason = isElevated
+        ? 'Fine aerosols and soot particles deposit on outer garments, skin, and upper nasal pathways during transit, resuspending into home air.'
+        : 'Evening temperatures and air quality are conducive to outdoor leisure without airway distress.';
+      eveningBenefit = isElevated
+        ? 'Removes particulate depot from skin and nasal mucosa, reducing nocturnal bronchospasm.'
+        : 'Enhances physical relaxation and restores indoor fresh air levels.';
+      eveningSteps = isElevated
+        ? [
+            'Remove outer commute jackets and shoes at entryway; avoid shaking garments inside living areas.',
+            'Wash face and hands with mild soap to rinse away surface soot and particulate residue.',
+            hasAsthma
+              ? 'Consider a gentle sterile isotonic saline nasal rinse to clear trapped upper-airway particulates.'
+              : 'Gargle with warm water to clear particulate irritation from back of throat.',
+            hasHEPA
+              ? 'Run HEPA purifier in bedroom on high for 30 minutes before switching to sleep mode.'
+              : 'Keep bedroom windows and doors closed against nocturnal inversion smoke.',
+            ventilationSafetyNote,
+          ]
+        : [
+            'Dine or unwind outdoors on patio or garden areas.',
+            'Keep windows partially open for gentle nocturnal cross-breeze.',
+          ];
+      eveningAssumptions = 'Nasal mucociliary clearance is accelerated by prompt external hygiene.';
+      eveningUncertainty = 'Individual nasal sensitivity and transit duration determine particulate deposition.';
+    } else {
+      // Variation 2: Nocturnal Thermal Inversion Defense & Sleep IAQ Focus
+      eveningAction = isElevated
+        ? 'Nocturnal Inversion Barrier: Keep Windows Closed Overnight & Avoid Incense'
+        : 'Nighttime Air Exchange Before Midnight Traffic Lull';
+      eveningReason = isElevated
+        ? 'Overnight radiational cooling creates a shallow thermal inversion lid, trapping ground emissions until sunrise.'
+        : 'Nighttime air quality is safe and clean, providing natural cooling without particulate ingress.';
+      eveningBenefit = isElevated
+        ? 'Prevents nocturnal asthma awakenings and cardiovascular stress during deep sleep.'
+        : 'Reduces reliance on air conditioning while keeping indoor air fresh.';
+      eveningSteps = isElevated
+        ? [
+            'Inspect window latches in sleeping quarters to ensure tight mechanical compression.',
+            'If room air feels dry from closed-door confinement, place a shallow bowl of clean water in room (avoid unvented vaporizers).',
+            hasHEPA
+              ? 'Keep air purifier running continuously on whisper setting near head of bed.'
+              : 'Keep floor clean of dust accumulation; wipe bedside surfaces with damp cloth.',
+            ventilationSafetyNote,
+          ]
+        : [
+            'Open bedroom windows to cool sleeping quarters naturally.',
+            'Set ceiling fan to gentle circulation speed.',
+          ];
+      eveningAssumptions = 'Radiational cooling reaches minimum ground temperature between 03:00 AM and 05:00 AM.';
+      eveningUncertainty = 'Nocturnal wind shifts or nearby agricultural/waste burning can alter night exposure.';
+    }
 
     const periods: DailyRoutinePlan['periods'] = [
       {
         period: 'MORNING',
         timeRange: '06:00 AM – 11:00 AM',
-        action: isElevated
-          ? 'Exercise Indoors & Commute in Sealed Cabin (Metro/Recirculating Car)'
-          : 'Normal Outdoor Commute & Morning Walk Permitted',
-        reason: isElevated
-          ? 'Morning surface temperature inversions trap diesel particulate and biomass smoke at human breathing height.'
-          : 'Ambient air quality meets safe baseline criteria for morning physical activity.',
-        environmentalEvidence:
-          env.status === 'AVAILABLE' && aqi !== null
-            ? `Current AQI: ${aqi} (${env.category}, dominant: ${env.dominantPollutant})`
-            : 'Localized telemetry unverified; precautionary morning inversion protocol applied.',
-        expectedBenefit: isElevated
-          ? 'Avoids peak ground-level particulate accumulation during rush hour.'
-          : 'Cardiovascular benefit of brisk morning exercise.',
-        implementationSteps: [
-          'Keep home windows sealed shut during morning traffic peak.',
-          'Run mechanical HEPA filter in bedrooms and living spaces.',
-          'If commuting, set car ventilation to recirculate or board air-filtered metro.',
-        ],
-        assumptions: 'Diurnal boundary layer dynamics in urban centers.',
-        uncertainty: 'Wind velocity and morning fog thickness cause localized variations.',
-        freshnessAndSource: env.status === 'AVAILABLE' ? `Source: ${env.provenance}` : 'Heuristic Model',
+        action: morningAction,
+        reason: morningReason,
+        environmentalEvidence: morningEvidence,
+        expectedBenefit: morningBenefit,
+        implementationSteps: morningSteps,
+        assumptions: morningAssumptions,
+        uncertainty: morningUncertainty,
+        freshnessAndSource: sourceLabel,
       },
       {
         period: 'AFTERNOON',
         timeRange: '12:00 PM – 04:00 PM',
-        action:
-          aqi !== null && aqi <= 100
-            ? 'Conditional Midday Cross-Ventilation (15–20 Mins if Verified Clean)'
-            : 'Maintain Closed Windows and Continuous HEPA Air Filtration',
-        reason:
-          aqi !== null && aqi <= 100
-            ? 'Solar convective mixing expands vertical atmospheric boundary layer, diluting ground concentrations to daily minimum. Safe to exchange air only because ambient AQI is verified <= 100.'
-            : 'Ambient pollution levels exceed safe ventilation thresholds (AQI > 100 or unverified); opening windows will introduce heavy particulate and gaseous contaminants.',
-        environmentalEvidence:
-          env.status === 'AVAILABLE' && aqi !== null
-            ? `Midday ventilation evaluated against current AQI ${aqi} (threshold: AQI <= 100).`
-            : 'Ambient telemetry unverified or elevated; maintaining sealed envelope.',
-        expectedBenefit:
-          aqi !== null && aqi <= 100
-            ? 'Flushes accumulated indoor carbon dioxide and VOCs without particulate ingress.'
-            : `Protects indoor PM2.5 below ${house.indoorPM25Target} µg/m³ by preventing outdoor contaminant penetration.`,
-        implementationSteps: [
-          aqi !== null && aqi <= 100
-            ? 'Open opposing windows for 15-20 minutes to achieve cross-ventilation, provided outdoor air is visibly clear and local AQI <= 100.'
-            : 'Keep all exterior windows and doors hermetically sealed.',
-          aqi !== null && aqi <= 100
-            ? 'Verify outdoor ozone levels are not elevated during peak afternoon sunlight.'
-            : 'Run mechanical True HEPA air purifier on continuous medium setting.',
-          'Close windows promptly before 4:00 PM as ambient traffic increases and evening cooling begins.',
-        ],
-        assumptions: 'Thermal buoyancy peaks during solar zenith; ambient AQI <= 100 required for window opening.',
-        uncertainty: 'Curbside vehicle exhaust or neighborhood biomass burning can spike local concentrations even if regional AQI is moderate.',
-        freshnessAndSource: env.status === 'AVAILABLE' ? `Source: ${env.provenance}` : 'Heuristic Model',
+        action: afternoonAction,
+        reason: afternoonReason,
+        environmentalEvidence: afternoonEvidence,
+        expectedBenefit: afternoonBenefit,
+        implementationSteps: afternoonSteps,
+        assumptions: afternoonAssumptions,
+        uncertainty: afternoonUncertainty,
+        freshnessAndSource: sourceLabel,
       },
       {
         period: 'EVENING',
         timeRange: '05:00 PM – 10:00 PM',
-        action: 'Seal Bedroom Windows & Engage HEPA Purifier in Sleep Mode at 5.0 ACH',
-        reason:
-          'Evening cooling collapses the atmospheric boundary layer, concentrating traffic exhaust and heating smoke overnight.',
-        environmentalEvidence:
-          env.status === 'AVAILABLE' && aqi !== null
-            ? `Anticipated nocturnal inversion; baseline AQI ${aqi}.`
-            : 'Evening nocturnal inversion standard protocol.',
-        expectedBenefit: `Guarantees 8 hours of clean, restorative sleep air with PM2.5 < ${house.indoorPM25Target} µg/m³.`,
-        implementationSteps: [
-          'Close bedroom doors and windows firmly.',
-          `Turn HEPA purifier on continuous medium or whisper-quiet sleep mode (target CADR ${house.requiredCADR_CFM ?? 200} CFM).`,
-          'Avoid burning candles, incense sticks, or mosquito repellents in sleeping quarters.',
-        ],
-        assumptions: 'Occupant spends 7-8 hours in sleeping quarters.',
-        uncertainty: 'Bedroom door opening frequency affects continuous filtration efficiency.',
-        freshnessAndSource: env.status === 'AVAILABLE' ? `Source: ${env.provenance}` : 'Heuristic Model',
+        action: eveningAction,
+        reason: eveningReason,
+        environmentalEvidence: eveningEvidence,
+        expectedBenefit: eveningBenefit,
+        implementationSteps: eveningSteps,
+        assumptions: eveningAssumptions,
+        uncertainty: eveningUncertainty,
+        freshnessAndSource: sourceLabel,
       },
     ];
+
+    // Build tailored summary statement
+    let summary = '';
+    if (env.status === 'AVAILABLE' && aqi !== null) {
+      summary = `Context-tailored action plan for ${house.vulnerabilityLabel} in ${locationName}. Baseline AQI: ${aqi} (${env.category}, dominant: ${dominant}). ${
+        hasHEPA
+          ? 'Calibrated for household mechanical HEPA air filtration.'
+          : 'Calibrated for residential barrier defense and indoor source control.'
+      }`;
+    } else {
+      summary = `Precautionary daily action plan for ${house.vulnerabilityLabel} in ${locationName}. Localized continuous telemetry is currently unavailable; protective diurnal routines applied.`;
+    }
 
     return {
       title: `Personalized Air-Quality Daily Action Plan (${targetDate})`,
       targetDate,
-      summary: `Tailored daily routine designed for ${house.vulnerabilityLabel} with ${
-        house.hasHEPAFilter ? 'active mechanical HEPA filtration' : 'standard residential ventilation'
-      }. Prioritizes clean air during diurnal pollution peaks.`,
+      summary,
       periods,
-      provenance: 'PRE_REVIEWED_RULE',
+      provenance: planProvenance,
       generatedAt: new Date().toISOString(),
       contextSummary: {
         aqi: env.aqi,
         category: env.category,
-        dominantPollutant: env.dominantPollutant,
+        dominantPollutant: dominant,
         vulnerabilityTier: house.vulnerabilityTier,
       },
       disclaimer:
-        'Conditional daily guidance based on atmospheric diurnal patterns. If outdoor conditions rapidly worsen, prioritize remaining indoors with mechanical air filtration.',
+        'Conditional environmental guidance based on diurnal atmospheric dynamics and available monitoring records. Not medical advice. Air filtration and exposure timing mitigate risk but do not guarantee complete protection. Consult a healthcare professional for persistent symptoms.',
     };
   },
 

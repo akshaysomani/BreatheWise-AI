@@ -174,7 +174,7 @@ describe('Browser-Level Integration & Dashboard UX Tests (M3 Phase 6 & 11)', () 
             json: async () => ({
               data: {
                 authenticated: true,
-                user: { id: 'usr_xyz', email: 'akshay@breathewise.local', name: 'Akshay' },
+                user: { id: 'usr_xyz', email: 'family@breathewise.local', name: 'Sharma Family' },
               },
             }),
           });
@@ -209,7 +209,7 @@ describe('Browser-Level Integration & Dashboard UX Tests (M3 Phase 6 & 11)', () 
       render(<DashboardPage />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Welcome back, Akshay/i)).toBeInTheDocument();
+        expect(screen.getByText(/Welcome back, Sharma Family/i)).toBeInTheDocument();
         expect(screen.getByText(/Verified Account/i)).toBeInTheDocument();
         expect(screen.getByText(/Overview/i)).toBeInTheDocument();
         expect(screen.getByText(/Household Profile & CADR/i)).toBeInTheDocument();

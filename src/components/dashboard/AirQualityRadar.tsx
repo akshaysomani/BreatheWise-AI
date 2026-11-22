@@ -34,7 +34,7 @@ export const REGIONAL_STATIONS: RegionalStationOption[] = [
   { label: 'Delhi (RK Puram)', city: 'Delhi', lat: 28.5632, lon: 77.1869, agency: 'DPCC' },
   { label: 'Ahmedabad (Maninagar)', city: 'Ahmedabad', lat: 22.9961, lon: 72.6042, agency: 'GPCB / AMC' },
   { label: 'Ahmedabad (Vatva GIDC)', city: 'Ahmedabad', lat: 22.9567, lon: 72.6321, agency: 'GPCB' },
-  { label: 'Gandhinagar (Sec 10)', city: 'Gandhinagar', lat: 23.2156, lon: 72.6369, agency: 'GPCB' },
+  { label: 'Gandhinagar (Sector 10)', city: 'Gandhinagar', lat: 23.2156, lon: 72.6369, agency: 'GPCB' },
   { label: 'Surat (Sachin GIDC)', city: 'Surat', lat: 21.0850, lon: 72.8680, agency: 'GPCB' },
 ];
 
@@ -117,7 +117,9 @@ export function AirQualityRadar({
     setError(null);
 
     try {
-      const res = await fetch(`/api/aqi?lat=${lat}&lon=${lon}`);
+      const res = await fetch(`/api/aqi?lat=${lat}&lon=${lon}&_t=${Date.now()}`, {
+        cache: 'no-store',
+      });
       const json = await res.json();
 
       if (!res.ok) {
@@ -161,9 +163,9 @@ export function AirQualityRadar({
   const health = shortTermIndicator?.healthGuidance || data?.cpcbAqi?.healthGuidance;
 
   // Provenance & Timestamps
-  const provenanceStatus: 'LIVE' | 'CACHED' | 'STALE' | 'MOCK' | 'NO_DATA' =
+  const provenanceStatus: 'LIVE' | 'AGING' | 'CACHED' | 'STALE' | 'MOCK' | 'NO_DATA' =
     data?.provenanceStatus ||
-    (data?.isLiveExternalFeed ? 'LIVE' : data?.freshness?.isStale ? 'STALE' : 'CACHED');
+    (data?.isLiveExternalFeed ? 'LIVE' : data?.freshness?.state === 'AGING' ? 'AGING' : data?.freshness?.isStale ? 'STALE' : 'CACHED');
 
   const observationTime = data?.timestamps?.observationLocalTime || data?.freshness?.measurementLocalTime || 'Recent';
   const retrievalTime = data?.timestamps?.retrievalLocalTime || 'Recent Query';
@@ -173,11 +175,11 @@ export function AirQualityRadar({
   const getProvenanceTypeLabel = (type: string) => {
     switch (type) {
       case 'VERIFIED_EXTERNAL_OBSERVATION':
-        return 'Verified Live Sensor Feed (OpenAQ / CPCB)';
+        return 'Verified Live Sensor Feed (OpenAQ v3 / CPCB)';
       case 'DEVELOPMENT_SEED':
         return 'Regional Baseline Cache (Seed Data)';
       case 'HISTORICAL_IMPORTED':
-        return 'Historical Continuous Monitoring Record';
+        return 'CPCB Historical Reference Baseline (Archived Statutory Profile)';
       case 'SYNTHETIC_FIXTURE':
         return 'Demonstration Fixture (Test Baseline)';
       default:
@@ -193,6 +195,13 @@ export function AirQualityRadar({
           <Badge variant="success" size="sm" className="font-semibold" data-testid="provenance-badge-live">
             <Radio className="w-3 h-3 mr-1 text-[#397A55] animate-pulse" />
             Live Observation (&lt;2h)
+          </Badge>
+        );
+      case 'AGING':
+        return (
+          <Badge variant="warning" size="sm" className="font-semibold bg-amber-50 text-amber-800 border-amber-300" data-testid="provenance-badge-aging">
+            <Clock className="w-3 h-3 mr-1 text-amber-700" />
+            Aging Observation (2-4h)
           </Badge>
         );
       case 'CACHED':
@@ -221,7 +230,7 @@ export function AirQualityRadar({
         return (
           <Badge variant="secondary" size="sm" className="font-semibold" data-testid="provenance-badge-nodata">
             <AlertCircle className="w-3 h-3 mr-1 text-[#68766C]" />
-            No Verified Data
+            {data?.status === 'NO_NEARBY_STATION' ? 'No Nearby Station (>50 km)' : 'Monitoring Unavailable'}
           </Badge>
         );
     }
@@ -232,6 +241,9 @@ export function AirQualityRadar({
     data?.status === 'NO_NEARBY_STATION' ||
     provenanceStatus === 'NO_DATA'
   );
+
+  const isLive = !isNoData && Boolean(data?.isLiveExternalFeed || data?.attribution?.isLiveFeed);
+  const isHistoricalOnly = !isNoData && !isLive;
 
   return (
     <Card className="bg-white border-[#E2E8DE] shadow-sm overflow-hidden" data-testid="aqi-radar-card">
@@ -370,18 +382,18 @@ export function AirQualityRadar({
           <div className="p-6 text-center bg-[#FAFBF9] rounded-xl space-y-3 border border-[#E2E8DE]" data-testid="aqi-no-data-card">
             <MapPin className="w-8 h-8 text-[#D97706] mx-auto" />
             <h4 className="text-base font-bold text-[#27352D]">
-              {data?.status === 'NO_NEARBY_STATION'
-                ? 'No Monitoring Station Within 50 km'
-                : 'No Verified Atmospheric Telemetry Available'}
+              Air-quality monitoring data is currently unavailable for this location.
             </h4>
-            <p className="text-xs text-[#68766C] max-w-lg mx-auto">
-              {data?.notice ||
-                'BreatheWise AI operates under a strict scientific zero-fabrication standard. No active continuous ambient monitoring station with verified telemetry is currently reachable for these coordinates.'}
+            <p className="text-xs text-[#68766C] max-w-lg mx-auto leading-relaxed">
+              {data?.status === 'NO_NEARBY_STATION'
+                ? `BreatheWise AI operates under a strict scientific zero-fabrication standard. No active continuous monitoring station is located within the 50 km representative radius of coordinates (${currentCoords.lat.toFixed(2)}, ${currentCoords.lon.toFixed(2)}).`
+                : 'BreatheWise AI operates under a strict scientific zero-fabrication standard. Continuous ambient monitoring observations are currently unreachable for these coordinates.'}
             </p>
+
             <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EEF3EA] text-[#397A55] text-xs font-semibold rounded-full">
               <ShieldCheck className="w-3.5 h-3.5" /> Zero Synthetic Fabrication Policy Enforced
             </div>
-            <div className="pt-2 flex justify-center gap-2">
+            <div className="pt-2 flex flex-wrap justify-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -396,13 +408,37 @@ export function AirQualityRadar({
               >
                 View Ahmedabad Regional Hub
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentCoords(REGIONAL_STATIONS[5])}
+              >
+                View Gandhinagar Regional Hub
+              </Button>
             </div>
           </div>
         )}
 
-        {/* Live / Verified Telemetry Display */}
+        {/* Telemetry Display */}
         {!loading && !error && !isNoData && data && (
           <div className="space-y-6">
+            {/* User-facing Telemetry Status Banner */}
+            {isLive ? (
+              <div className="p-3 bg-emerald-50/90 border border-emerald-200/80 rounded-xl text-xs text-emerald-900 flex items-start gap-2.5" data-testid="telemetry-status-banner">
+                <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                <p className="font-medium text-emerald-950 leading-relaxed">
+                  Live air-quality monitoring data is available for this location.
+                </p>
+              </div>
+            ) : isHistoricalOnly ? (
+              <div className="p-3 bg-amber-50/90 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-start gap-2.5" data-testid="telemetry-status-banner">
+                <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <p className="font-medium text-amber-950 leading-relaxed">
+                  Air-quality monitoring information is currently available from historical station records. Live monitoring updates are temporarily unavailable.
+                </p>
+              </div>
+            ) : null}
+
             {/* Main AQI Hero Gauge Card: Short-Term Air Quality Indicator */}
             <div className={`p-5 rounded-xl border ${categoryStyle.bg} ${categoryStyle.border} transition-all`}>
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

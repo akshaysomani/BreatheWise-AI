@@ -27,6 +27,11 @@ export const routineGenerateInputSchema = z
     outdoorActivities: sanitizedStringSchema(500).optional(),
     commuteMode: sanitizedStringSchema(100).optional(),
     targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    locationName: sanitizedStringSchema(120).optional(),
+    variationIndex: z.number().int().min(0).max(10).optional(),
+    isRegeneration: z.boolean().optional(),
   })
   .strict();
 

@@ -8,6 +8,7 @@ import {
   HouseholdContext,
   RoutineContext,
 } from './types';
+export type { AiContextPayload, EnvironmentalContext, HouseholdContext, RoutineContext };
 import { ProvenanceType, TelemetryProvenanceStatus } from '@/lib/air-quality/types';
 
 /**

@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
         requestedCoordinates: sanitizedCoords,
         station: null,
         cpcbAqi: null,
+        providerStatus: result.providerStatus || null,
       });
     }
 
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest) {
         requestedCoordinates: sanitizedCoords,
         station: null,
         cpcbAqi: null,
+        providerStatus: result.providerStatus || null,
       });
     }
 
@@ -73,6 +75,7 @@ export async function GET(req: NextRequest) {
       officialCpcbAqi: d.officialCpcbAqi,
       shortTermIndicator: d.shortTermIndicator,
       cpcbAqi: d.cpcbAqi,
+      providerStatus: result.providerStatus || null,
       pollutants: {
         pm25: { value: d.measurements['PM2.5']?.normalizedValue ?? null, unit: 'µg/m³' },
         pm10: { value: d.measurements['PM10']?.normalizedValue ?? null, unit: 'µg/m³' },
